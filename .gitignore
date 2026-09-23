@@ -1,7 +1,4 @@
-# Generated per-CLI-version by the "refresh bundle schema" task
-.zed/databricks-bundle.schema.json
-.zed/databricks-bundle.schema.version
-/target
+target/
 *.wasm
 __pycache__/
 .pytest_cache/

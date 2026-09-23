@@ -64,13 +64,6 @@
     "allow_concurrent_runs": false
   },
   {
-    "label": "databricks: refresh bundle schema",
-    "command": "mkdir -p .zed && databricks bundle schema > .zed/databricks-bundle.schema.json.tmp && mv .zed/databricks-bundle.schema.json.tmp .zed/databricks-bundle.schema.json && databricks --version > .zed/databricks-bundle.schema.version && echo \"Bundle schema written for $(cat .zed/databricks-bundle.schema.version). Run 'editor: restart language server' in a YAML buffer to reload it.\"",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "hide": "on_success",
-    "reveal": "no_focus"
-  },
-  {
     "label": "databricks: auth login",
     "command": "databricks auth login",
     "cwd": "$ZED_WORKTREE_ROOT"

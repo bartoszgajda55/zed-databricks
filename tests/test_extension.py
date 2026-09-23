@@ -165,10 +165,9 @@ def test_bundle_tasks_never_auto_approve_and_show_target():
             assert "DATABRICKS_BUNDLE_TARGET" in task["command"]
 
 
-def test_settings_map_bundle_files_to_generated_schema():
+def test_settings_template_is_valid_jsonc():
     settings = load_jsonc(TEMPLATE / "settings.json")
-    schemas = settings["lsp"]["yaml-language-server"]["settings"]["yaml"]["schemas"]
-    assert schemas["./.zed/databricks-bundle.schema.json"][0] == "databricks.yml"
+    assert "env" in settings["terminal"]
 
 
 # --- setup script ---------------------------------------------------------------
@@ -181,17 +180,12 @@ def run_setup(project):
 
 
 def test_setup_project_installs_templates_and_is_idempotent(tmp_path):
-    (tmp_path / ".gitignore").write_text("*.pyc\n")
     run_setup(tmp_path)
     assert (tmp_path / ".zed/tasks.json").read_text() == (TEMPLATE / "tasks.json").read_text()
     assert (tmp_path / ".zed/settings.json").exists()
-    if HAS_CLI:
-        json.loads((tmp_path / ".zed/databricks-bundle.schema.json").read_text())
-        assert "Databricks CLI" in (tmp_path / ".zed/databricks-bundle.schema.version").read_text()
 
     second = run_setup(tmp_path)
     assert "unchanged .zed/tasks.json" in second.stdout
-    assert (tmp_path / ".gitignore").read_text().count("databricks-bundle.schema") == 1
 
 
 def test_setup_project_never_overwrites_existing_config(tmp_path):

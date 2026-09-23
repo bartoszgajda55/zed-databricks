@@ -1,29 +1,10 @@
 // Databricks project settings for Zed (generated from zed-databricks/project-template).
 // Merge these keys into an existing .zed/settings.json rather than overwriting it.
 {
-  "lsp": {
-    "yaml-language-server": {
-      "settings": {
-        "yaml": {
-          // Bundle JSON schema generated from the *installed* Databricks CLI by the
-          // "databricks: refresh bundle schema" task. Relative paths resolve against the worktree root.
-          "schemas": {
-            "./.zed/databricks-bundle.schema.json": [
-              "databricks.yml",
-              "databricks.yaml",
-              "*.bundle.yml",
-              "*.bundle.yaml",
-              "resources/**/*.yml",
-              "resources/**/*.yaml"
-            ]
-          }
-        }
-      }
-    }
-  },
   "terminal": {
     "env": {
-      // Active bundle target / CLI profile for every `databricks` task and terminal in this project.
+      // Active bundle target / CLI profile for the `databricks` tasks, this project's terminals,
+      // and the databricks-bundle-ls validation diagnostics.
       // Unset = the target marked `default: true` in databricks.yml and the DEFAULT profile.
       // "DATABRICKS_BUNDLE_TARGET": "dev",
       // "DATABRICKS_CONFIG_PROFILE": "DEFAULT"

@@ -1,9 +1,31 @@
 id = "databricks"
 name = "Databricks"
-version = "0.1.0"
+version = "0.2.0"
 schema_version = 1
 authors = ["Bartosz Gajda <bartek.g55@gmail.com>"]
-description = "Databricks development in Zed: Declarative Automation Bundle schema & snippets, Spark Declarative Pipelines snippets, and CLI task wiring."
+description = "Databricks development in Zed: Declarative Automation Bundle schema, validation diagnostics & snippets, Spark Declarative Pipelines snippets, and CLI task wiring."
 repository = "https://github.com/bartoszgajda55/zed-databricks"
 
 snippets = ["./snippets/yaml.json", "./snippets/python.json", "./snippets/sql.json"]
+
+# `databricks bundle validate` as diagnostics (servers/databricks-bundle-ls). It only acts on
+# YAML files inside a bundle (a directory tree with databricks.yml).
+[language_servers.databricks-bundle-ls]
+languages = ["YAML"]
+
+# Only the two Databricks CLI invocations used to generate the bundle schema.
+[[capabilities]]
+kind = "process:exec"
+command = "databricks"
+args = ["--version"]
+
+[[capabilities]]
+kind = "process:exec"
+command = "databricks"
+args = ["bundle", "schema"]
+
+# Prebuilt databricks-bundle-ls binaries from this repository's GitHub releases.
+[[capabilities]]
+kind = "download_file"
+host = "github.com"
+path = ["bartoszgajda55", "zed-databricks", "**"]
