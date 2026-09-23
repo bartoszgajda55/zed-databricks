@@ -1,0 +1,108 @@
+[
+  {
+    "label": "databricks: bundle validate",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle validate",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ],
+    "save": "all"
+  },
+  {
+    "label": "databricks: bundle plan",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle plan",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ],
+    "save": "all"
+  },
+  {
+    "label": "databricks: bundle deploy",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle deploy",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ],
+    "save": "all"
+  },
+  {
+    "label": "databricks: bundle run (pick resource)",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle run",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ],
+    "save": "all"
+  },
+  {
+    "label": "databricks: bundle run \"$ZED_SELECTED_TEXT\"",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle run \"$ZED_SELECTED_TEXT\"",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ],
+    "save": "all"
+  },
+  {
+    "label": "databricks: bundle summary",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle summary",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ],
+    "save": "all"
+  },
+  {
+    "label": "databricks: bundle destroy (confirmation required)",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle destroy",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ],
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "databricks: refresh bundle schema",
+    "command": "mkdir -p .zed && databricks bundle schema > .zed/databricks-bundle.schema.json.tmp && mv .zed/databricks-bundle.schema.json.tmp .zed/databricks-bundle.schema.json && databricks --version > .zed/databricks-bundle.schema.version && echo \"Bundle schema written for $(cat .zed/databricks-bundle.schema.version). Run 'editor: restart language server' in a YAML buffer to reload it.\"",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "hide": "on_success",
+    "reveal": "no_focus"
+  },
+  {
+    "label": "databricks: auth login",
+    "command": "databricks auth login",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "databricks: auth profiles",
+    "command": "databricks auth profiles",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "databricks: auth describe",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks auth describe",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "sdp: dry-run pipeline spec (current file)",
+    "command": "PATH=\"$ZED_WORKTREE_ROOT/.venv/bin:$PATH\" spark-pipelines dry-run --spec \"$ZED_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "sdp: run pipeline spec (current file)",
+    "command": "PATH=\"$ZED_WORKTREE_ROOT/.venv/bin:$PATH\" spark-pipelines run --spec \"$ZED_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "pytest: all tests",
+    "command": "PATH=\"$ZED_WORKTREE_ROOT/.venv/bin:$PATH\" python -m pytest",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "pytest: current file",
+    "command": "PATH=\"$ZED_WORKTREE_ROOT/.venv/bin:$PATH\" python -m pytest \"$ZED_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  }
+]

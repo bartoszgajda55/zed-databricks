@@ -1,0 +1,89 @@
+{
+  "SDP: streaming table": {
+    "prefix": "sdp-st",
+    "description": "CREATE STREAMING TABLE … AS SELECT FROM STREAM",
+    "body": [
+      "CREATE STREAMING TABLE ${1:bronze_events}",
+      "COMMENT \"${2:Raw events ingested incrementally}\"",
+      "AS SELECT * FROM STREAM ${3:source_table};",
+      "$0"
+    ]
+  },
+  "SDP: streaming table from files": {
+    "prefix": "sdp-st-files",
+    "description": "Streaming table ingesting files with read_files (Auto Loader) (Databricks only, not in OSS Spark)",
+    "body": [
+      "CREATE STREAMING TABLE ${1:raw_files}",
+      "AS SELECT * FROM STREAM read_files(",
+      "  \"${2:/Volumes/catalog/schema/volume/path}\",",
+      "  format => \"${3:json}\"",
+      ");",
+      "$0"
+    ]
+  },
+  "SDP: materialized view": {
+    "prefix": "sdp-mv",
+    "description": "CREATE MATERIALIZED VIEW",
+    "body": [
+      "CREATE MATERIALIZED VIEW ${1:silver_events}",
+      "COMMENT \"${2:Cleaned events}\"",
+      "AS SELECT ${3:*}",
+      "FROM ${4:bronze_events};",
+      "$0"
+    ]
+  },
+  "SDP: temporary view": {
+    "prefix": "sdp-view",
+    "description": "CREATE TEMPORARY VIEW scoped to the pipeline",
+    "body": [
+      "CREATE TEMPORARY VIEW ${1:events_filtered}",
+      "AS SELECT * FROM ${2:bronze_events}",
+      "WHERE ${3:event_type IS NOT NULL};",
+      "$0"
+    ]
+  },
+  "SDP: streaming table with expectations": {
+    "prefix": "sdp-st-expect",
+    "description": "Streaming table with CONSTRAINT … EXPECT … ON VIOLATION (Databricks only, not in OSS Spark)",
+    "body": [
+      "CREATE STREAMING TABLE ${1:silver_events} (",
+      "  CONSTRAINT ${2:valid_id} EXPECT (${3:id IS NOT NULL}) ON VIOLATION ${4|DROP ROW,FAIL UPDATE|}",
+      ")",
+      "AS SELECT * FROM STREAM ${5:bronze_events};",
+      "$0"
+    ]
+  },
+  "SDP: expectation constraint": {
+    "prefix": "sdp-expect",
+    "description": "CONSTRAINT … EXPECT … ON VIOLATION clause (Databricks only, not in OSS Spark)",
+    "body": [
+      "CONSTRAINT ${1:valid_id} EXPECT (${2:id IS NOT NULL}) ON VIOLATION ${3|DROP ROW,FAIL UPDATE|}$0"
+    ]
+  },
+  "SDP: AUTO CDC flow": {
+    "prefix": "sdp-cdc",
+    "description": "AUTO CDC INTO (formerly APPLY CHANGES INTO) — CDC into an SCD1/SCD2 target (Databricks only, not in OSS Spark)",
+    "body": [
+      "CREATE STREAMING TABLE ${1:customers};",
+      "",
+      "CREATE FLOW ${2:customers_cdc_flow} AS AUTO CDC INTO ${1:customers}",
+      "FROM STREAM ${3:customers_cdc}",
+      "KEYS (${4:customer_id})",
+      "SEQUENCE BY ${5:updated_at}",
+      "STORED AS SCD TYPE ${6:1};",
+      "$0"
+    ]
+  },
+  "SDP: append flow": {
+    "prefix": "sdp-append-flow",
+    "description": "CREATE FLOW … AS INSERT INTO — append into a streaming table",
+    "body": [
+      "CREATE STREAMING TABLE ${1:all_events};",
+      "",
+      "CREATE FLOW ${2:append_from_source}",
+      "AS INSERT INTO ${1:all_events} BY NAME",
+      "SELECT * FROM STREAM ${3:source_table};",
+      "$0"
+    ]
+  }
+}

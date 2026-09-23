@@ -1,0 +1,261 @@
+{
+  "Bundle: databricks.yml skeleton": {
+    "prefix": "dab-bundle",
+    "description": "Minimal databricks.yml with include, variables and dev/prod targets",
+    "body": [
+      "bundle:",
+      "  name: ${1:my_bundle}",
+      "",
+      "include:",
+      "  - resources/*.yml",
+      "",
+      "variables:",
+      "  catalog:",
+      "    description: Unity Catalog catalog to deploy into",
+      "    default: ${2:main}",
+      "",
+      "targets:",
+      "  dev:",
+      "    mode: development",
+      "    default: true",
+      "    workspace:",
+      "      host: ${3:https://my-workspace.cloud.databricks.com}",
+      "",
+      "  prod:",
+      "    mode: production",
+      "    workspace:",
+      "      host: ${3:https://my-workspace.cloud.databricks.com}",
+      "      root_path: /Workspace/Users/\\${workspace.current_user.userName}/.bundle/\\${bundle.name}/\\${bundle.target}",
+      "    permissions:",
+      "      - group_name: ${4:users}",
+      "        level: CAN_VIEW",
+      "$0"
+    ]
+  },
+  "Bundle: job": {
+    "prefix": "dab-job",
+    "description": "Job resource with a serverless Python file task",
+    "body": [
+      "resources:",
+      "  jobs:",
+      "    ${1:my_job}:",
+      "      name: ${2:\\${bundle.target}-${1:my_job}}",
+      "      tasks:",
+      "        - task_key: ${3:main}",
+      "          spark_python_task:",
+      "            python_file: ${4:../src/main.py}",
+      "          environment_key: default",
+      "      environments:",
+      "        - environment_key: default",
+      "          spec:",
+      "            environment_version: \"${5:2}\"",
+      "            dependencies:",
+      "              - ${6:../dist/*.whl}",
+      "$0"
+    ]
+  },
+  "Bundle: job task": {
+    "prefix": "dab-task",
+    "description": "Job task entry (notebook task, depends on another task)",
+    "body": [
+      "- task_key: ${1:transform}",
+      "  depends_on:",
+      "    - task_key: ${2:ingest}",
+      "  notebook_task:",
+      "    notebook_path: ${3:../src/notebook.ipynb}",
+      "$0"
+    ]
+  },
+  "Bundle: job pipeline task": {
+    "prefix": "dab-task-pipeline",
+    "description": "Job task that triggers a bundle-managed pipeline",
+    "body": [
+      "- task_key: ${1:refresh_pipeline}",
+      "  pipeline_task:",
+      "    pipeline_id: \\${resources.pipelines.${2:my_pipeline}.id}",
+      "    full_refresh: ${3:false}",
+      "$0"
+    ]
+  },
+  "Bundle: job schedule": {
+    "prefix": "dab-schedule",
+    "description": "Quartz cron schedule for a job",
+    "body": [
+      "schedule:",
+      "  quartz_cron_expression: \"${1:0 0 6 * * ?}\"",
+      "  timezone_id: ${2:UTC}",
+      "  pause_status: ${3:UNPAUSED}",
+      "$0"
+    ]
+  },
+  "Bundle: job cluster": {
+    "prefix": "dab-job-cluster",
+    "description": "Job cluster definition governed by a cluster policy",
+    "body": [
+      "job_clusters:",
+      "  - job_cluster_key: ${1:job_cluster}",
+      "    new_cluster:",
+      "      spark_version: ${2:16.4.x-scala2.12}",
+      "      node_type_id: ${3:i3.xlarge}",
+      "      policy_id: \\${var.${4:cluster_policy_id}}",
+      "      apply_policy_default_values: true",
+      "      autoscale:",
+      "        min_workers: ${5:1}",
+      "        max_workers: ${6:4}",
+      "$0"
+    ]
+  },
+  "Bundle: cluster": {
+    "prefix": "dab-cluster",
+    "description": "All-purpose cluster resource governed by a cluster policy",
+    "body": [
+      "resources:",
+      "  clusters:",
+      "    ${1:dev_cluster}:",
+      "      cluster_name: ${2:\\${bundle.target}-${1:dev_cluster}}",
+      "      spark_version: ${3:16.4.x-scala2.12}",
+      "      node_type_id: ${4:i3.xlarge}",
+      "      policy_id: \\${var.${5:cluster_policy_id}}",
+      "      apply_policy_default_values: true",
+      "      autotermination_minutes: ${6:30}",
+      "      num_workers: ${7:1}",
+      "$0"
+    ]
+  },
+  "Bundle: pipeline (SDP)": {
+    "prefix": "dab-pipeline",
+    "description": "Serverless Spark Declarative Pipeline resource",
+    "body": [
+      "resources:",
+      "  pipelines:",
+      "    ${1:my_pipeline}:",
+      "      name: ${2:\\${bundle.target}-${1:my_pipeline}}",
+      "      catalog: \\${var.catalog}",
+      "      schema: ${3:\\${bundle.target}_${1:my_pipeline}}",
+      "      serverless: true",
+      "      root_path: ${4:../src/${1:my_pipeline}}",
+      "      libraries:",
+      "        - glob:",
+      "            include: ${5:../src/${1:my_pipeline}/transformations/**}",
+      "      environment:",
+      "        dependencies:",
+      "          - ${6:--editable \\${workspace.file_path}}",
+      "$0"
+    ]
+  },
+  "Bundle: variable": {
+    "prefix": "dab-variable",
+    "description": "Bundle variable with a default",
+    "body": [
+      "${1:my_variable}:",
+      "  description: ${2:Description}",
+      "  default: ${3:value}",
+      "$0"
+    ]
+  },
+  "Bundle: lookup variable": {
+    "prefix": "dab-variable-lookup",
+    "description": "Bundle variable resolved by name lookup (e.g. a cluster policy ID)",
+    "body": [
+      "${1:cluster_policy_id}:",
+      "  description: ${2:ID of the cluster policy, resolved by name}",
+      "  lookup:",
+      "    ${3|cluster_policy,cluster,warehouse,service_principal,metastore,instance_pool,job,pipeline,query,dashboard,alert|}: \"${4:Policy name}\"",
+      "$0"
+    ]
+  },
+  "Bundle: target": {
+    "prefix": "dab-target",
+    "description": "Single deployment target",
+    "body": [
+      "${1:staging}:",
+      "  mode: ${2|development,production|}",
+      "  workspace:",
+      "    host: ${3:https://my-workspace.cloud.databricks.com}",
+      "  variables:",
+      "    catalog: ${4:${1:staging}}",
+      "$0"
+    ]
+  },
+  "Bundle: dev/staging/prod targets": {
+    "prefix": "dab-targets",
+    "description": "Standard dev / staging / prod target set",
+    "body": [
+      "targets:",
+      "  dev:",
+      "    mode: development",
+      "    default: true",
+      "    workspace:",
+      "      host: ${1:https://dev-workspace.cloud.databricks.com}",
+      "    variables:",
+      "      catalog: ${2:dev}",
+      "",
+      "  staging:",
+      "    mode: production",
+      "    workspace:",
+      "      host: ${3:https://staging-workspace.cloud.databricks.com}",
+      "      root_path: /Workspace/Shared/.bundle/\\${bundle.name}/\\${bundle.target}",
+      "    run_as:",
+      "      service_principal_name: ${4:00000000-0000-0000-0000-000000000000}",
+      "    variables:",
+      "      catalog: ${5:staging}",
+      "",
+      "  prod:",
+      "    mode: production",
+      "    workspace:",
+      "      host: ${6:https://prod-workspace.cloud.databricks.com}",
+      "      root_path: /Workspace/Shared/.bundle/\\${bundle.name}/\\${bundle.target}",
+      "    run_as:",
+      "      service_principal_name: ${7:00000000-0000-0000-0000-000000000000}",
+      "    variables:",
+      "      catalog: ${8:prod}",
+      "$0"
+    ]
+  },
+  "Bundle: permissions": {
+    "prefix": "dab-permissions",
+    "description": "Permissions block (users / groups / service principals)",
+    "body": [
+      "permissions:",
+      "  - group_name: ${1:data-engineers}",
+      "    level: ${2|CAN_MANAGE,CAN_RUN,CAN_VIEW|}",
+      "  - service_principal_name: ${3:00000000-0000-0000-0000-000000000000}",
+      "    level: CAN_MANAGE",
+      "$0"
+    ]
+  },
+  "Bundle: sync include/exclude": {
+    "prefix": "dab-sync",
+    "description": "Control which local files are synced to the workspace",
+    "body": [
+      "sync:",
+      "  include:",
+      "    - ${1:dist/*.whl}",
+      "  exclude:",
+      "    - ${2:tests/**}",
+      "    - ${3:.venv/**}",
+      "$0"
+    ]
+  },
+  "Bundle: wheel artifact": {
+    "prefix": "dab-artifact-wheel",
+    "description": "Build a Python wheel as part of deploy",
+    "body": [
+      "artifacts:",
+      "  ${1:default}:",
+      "    type: whl",
+      "    build: ${2:uv build --wheel}",
+      "    path: ${3:.}",
+      "$0"
+    ]
+  },
+  "Bundle: include": {
+    "prefix": "dab-include",
+    "description": "Include additional bundle configuration files",
+    "body": [
+      "include:",
+      "  - ${1:resources/*.yml}",
+      "$0"
+    ]
+  }
+}

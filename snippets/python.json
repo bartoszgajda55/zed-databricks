@@ -1,0 +1,166 @@
+{
+  "SDP: import": {
+    "prefix": "sdp-import",
+    "description": "Import the Spark Declarative Pipelines Python API",
+    "body": [
+      "from pyspark import pipelines as dp",
+      "$0"
+    ]
+  },
+  "SDP: streaming table": {
+    "prefix": "sdp-table",
+    "description": "@dp.table — streaming table fed by a streaming read",
+    "body": [
+      "@dp.table(",
+      "    name=\"${1:bronze_events}\",",
+      "    comment=\"${2:Raw events ingested incrementally}\",",
+      ")",
+      "def ${1:bronze_events}():",
+      "    return spark.readStream.table(\"${3:source_table}\")$0"
+    ]
+  },
+  "SDP: materialized view": {
+    "prefix": "sdp-mv",
+    "description": "@dp.materialized_view — batch-recomputed dataset",
+    "body": [
+      "@dp.materialized_view(",
+      "    name=\"${1:silver_events}\",",
+      "    comment=\"${2:Cleaned events}\",",
+      ")",
+      "def ${1:silver_events}():",
+      "    return spark.read.table(\"${3:bronze_events}\")$0"
+    ]
+  },
+  "SDP: temporary view": {
+    "prefix": "sdp-view",
+    "description": "@dp.temporary_view — pipeline-scoped view, not published",
+    "body": [
+      "@dp.temporary_view(name=\"${1:events_filtered}\")",
+      "def ${1:events_filtered}():",
+      "    return spark.read.table(\"${2:bronze_events}\").where(\"${3:event_type IS NOT NULL}\")$0"
+    ]
+  },
+  "SDP: Auto Loader streaming read": {
+    "prefix": "sdp-autoloader",
+    "description": "Streaming table ingesting files with Auto Loader (cloudFiles) (Databricks only, not in OSS Spark)",
+    "body": [
+      "@dp.table(name=\"${1:raw_files}\")",
+      "def ${1:raw_files}():",
+      "    return (",
+      "        spark.readStream.format(\"cloudFiles\")",
+      "        .option(\"cloudFiles.format\", \"${2:json}\")",
+      "        .load(\"${3:/Volumes/catalog/schema/volume/path}\")",
+      "    )$0"
+    ]
+  },
+  "SDP: Kafka streaming read": {
+    "prefix": "sdp-kafka",
+    "description": "Streaming table reading from Kafka",
+    "body": [
+      "@dp.table(name=\"${1:kafka_raw}\")",
+      "def ${1:kafka_raw}():",
+      "    return (",
+      "        spark.readStream.format(\"kafka\")",
+      "        .option(\"kafka.bootstrap.servers\", \"${2:host:9092}\")",
+      "        .option(\"subscribe\", \"${3:topic}\")",
+      "        .option(\"startingOffsets\", \"${4:earliest}\")",
+      "        .load()",
+      "    )$0"
+    ]
+  },
+  "SDP: append flow": {
+    "prefix": "sdp-append-flow",
+    "description": "Create a streaming table and append a flow into it",
+    "body": [
+      "dp.create_streaming_table(\"${1:all_events}\")",
+      "",
+      "",
+      "@dp.append_flow(target=\"${1:all_events}\")",
+      "def ${2:append_from_source}():",
+      "    return spark.readStream.table(\"${3:source_table}\")$0"
+    ]
+  },
+  "SDP: AUTO CDC flow": {
+    "prefix": "sdp-cdc",
+    "description": "dp.create_auto_cdc_flow (formerly apply_changes) — CDC into an SCD1/SCD2 target",
+    "body": [
+      "dp.create_streaming_table(\"${1:customers}\")",
+      "",
+      "dp.create_auto_cdc_flow(",
+      "    target=\"${1:customers}\",",
+      "    source=\"${2:customers_cdc}\",",
+      "    keys=[\"${3:customer_id}\"],",
+      "    sequence_by=\"${4:updated_at}\",",
+      "    stored_as_scd_type=${5:1},",
+      ")$0"
+    ]
+  },
+  "SDP: expect": {
+    "prefix": "sdp-expect",
+    "description": "@dp.expect — record violations, keep rows (Databricks only, not in OSS Spark)",
+    "body": [
+      "@dp.expect(\"${1:valid_id}\", \"${2:id IS NOT NULL}\")$0"
+    ]
+  },
+  "SDP: expect_or_drop": {
+    "prefix": "sdp-expect-drop",
+    "description": "@dp.expect_or_drop — drop violating rows (Databricks only, not in OSS Spark)",
+    "body": [
+      "@dp.expect_or_drop(\"${1:valid_id}\", \"${2:id IS NOT NULL}\")$0"
+    ]
+  },
+  "SDP: expect_or_fail": {
+    "prefix": "sdp-expect-fail",
+    "description": "@dp.expect_or_fail — fail the update on violation (Databricks only, not in OSS Spark)",
+    "body": [
+      "@dp.expect_or_fail(\"${1:valid_id}\", \"${2:id IS NOT NULL}\")$0"
+    ]
+  },
+  "SDP: expect_all": {
+    "prefix": "sdp-expect-all",
+    "description": "@dp.expect_all — several named constraints at once (Databricks only, not in OSS Spark)",
+    "body": [
+      "@dp.expect_all({",
+      "    \"${1:valid_id}\": \"${2:id IS NOT NULL}\",",
+      "    \"${3:valid_ts}\": \"${4:event_ts > '2020-01-01'}\",",
+      "})$0"
+    ]
+  },
+  "PySpark: local SparkSession pytest fixture": {
+    "prefix": "pyspark-fixture",
+    "description": "Session-scoped local SparkSession fixture for pytest (no cluster, no cost)",
+    "body": [
+      "import pytest",
+      "from pyspark.sql import SparkSession",
+      "",
+      "",
+      "@pytest.fixture(scope=\"session\")",
+      "def spark():",
+      "    session = (",
+      "        SparkSession.builder.master(\"local[1]\")",
+      "        .appName(\"${1:unit-tests}\")",
+      "        .config(\"spark.sql.shuffle.partitions\", \"1\")",
+      "        .getOrCreate()",
+      "    )",
+      "    yield session",
+      "    session.stop()",
+      "$0"
+    ]
+  },
+  "PySpark: chispa DataFrame test": {
+    "prefix": "pyspark-test",
+    "description": "pytest test comparing DataFrames with chispa",
+    "body": [
+      "from chispa import assert_df_equality",
+      "",
+      "",
+      "def test_${1:transform}(spark):",
+      "    source = spark.createDataFrame([${2:(1, \"a\")}], ${3:[\"id\", \"value\"]})",
+      "    expected = spark.createDataFrame([${4:(1, \"a\")}], ${3:[\"id\", \"value\"]})",
+      "",
+      "    actual = ${5:${1:transform}}(source)",
+      "",
+      "    assert_df_equality(actual, expected, ignore_row_order=True)$0"
+    ]
+  }
+}
