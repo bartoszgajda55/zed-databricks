@@ -1,0 +1,27 @@
+resources:
+  jobs:
+    daily_job:
+      name: daily-job
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: UTC
+      tasks:
+        - task_key: ingest
+          spark_python_task:
+            python_file: ../src/ingest.py
+          environment_key: default
+        - task_key: refresh
+          depends_on:
+            - task_key: ingest
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.events_pipeline.id}
+        - task_key: report
+          depends_on:
+            - task_key: refresh
+            - task_key: ingest
+          notebook_task:
+            notebook_path: ../src/report.ipynb
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"

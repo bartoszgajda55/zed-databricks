@@ -14,11 +14,22 @@ dev = [
     "regex>=2024.11",
     "pyspark[connect]>=4.1",
     "chispa>=0.10",
+    "databricks-dev-mcp",
+    "pytest-asyncio>=1.4",
 ]
 
 [tool.uv]
 package = false
 default-groups = ["dev"]
 
+[tool.uv.sources]
+databricks-dev-mcp = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "servers/databricks-dev-mcp",
+]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "servers/databricks-dev-mcp/tests"]
+asyncio_mode = "auto"

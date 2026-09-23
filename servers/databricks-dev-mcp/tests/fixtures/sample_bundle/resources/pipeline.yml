@@ -1,0 +1,11 @@
+resources:
+  pipelines:
+    events_pipeline:
+      name: events-pipeline
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      root_path: ../src/pipeline
+      libraries:
+        - glob:
+            include: ../src/pipeline/**

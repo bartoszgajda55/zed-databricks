@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bartoszgajda55/databricks-dev",
+  "title": "Databricks Dev",
+  "description": "Deploy, run and inspect Databricks bundles, jobs, pipelines and Unity Catalog via the databricks CLI",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/bartoszgajda55/zed-databricks",
+    "source": "github",
+    "subfolder": "servers/databricks-dev-mcp"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "databricks-dev-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "DATABRICKS_CONFIG_PROFILE",
+          "description": "~/.databrickscfg profile to use (default: DEFAULT)",
+          "isRequired": false
+        },
+        {
+          "name": "DATABRICKS_BUNDLE_TARGET",
+          "description": "Default bundle target (default: the bundle's default target)",
+          "isRequired": false
+        },
+        {
+          "name": "DATABRICKS_BUNDLE_ROOT",
+          "description": "Bundle directory (default: the server's working directory)",
+          "isRequired": false
+        },
+        {
+          "name": "DATABRICKS_CLI_PATH",
+          "description": "Path to the databricks CLI (default: databricks on PATH)",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
