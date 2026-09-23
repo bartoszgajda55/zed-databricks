@@ -9,5 +9,23 @@
       // "DATABRICKS_BUNDLE_TARGET": "dev",
       // "DATABRICKS_CONFIG_PROFILE": "DEFAULT"
     }
+  },
+  "languages": {
+    "Python": {
+      "format_on_save": "on",
+      "formatter": { "language_server": { "name": "ruff" } },
+      "code_actions_on_format": { "source.organizeImports.ruff": true }
+    }
+  },
+  "lsp": {
+    "ruff": {
+      "initialization_options": {
+        "settings": {
+          // Databricks runtime globals, so ruff doesn't report them as undefined (F821).
+          // Merged over the project's ruff.toml / pyproject.toml settings.
+          "configuration": { "builtins": ["spark", "sc", "dbutils", "display", "displayHTML"] }
+        }
+      }
+    }
   }
 }

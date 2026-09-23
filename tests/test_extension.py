@@ -168,6 +168,9 @@ def test_bundle_tasks_never_auto_approve_and_show_target():
 def test_settings_template_is_valid_jsonc():
     settings = load_jsonc(TEMPLATE / "settings.json")
     assert "env" in settings["terminal"]
+    assert settings["languages"]["Python"]["formatter"] == {"language_server": {"name": "ruff"}}
+    builtins = settings["lsp"]["ruff"]["initialization_options"]["settings"]["configuration"]["builtins"]
+    assert {"spark", "dbutils", "display"} <= set(builtins)
 
 
 # --- setup script ---------------------------------------------------------------
@@ -183,6 +186,9 @@ def test_setup_project_installs_templates_and_is_idempotent(tmp_path):
     run_setup(tmp_path)
     assert (tmp_path / ".zed/tasks.json").read_text() == (TEMPLATE / "tasks.json").read_text()
     assert (tmp_path / ".zed/settings.json").exists()
+    assert (tmp_path / "typings/pyspark-stubs/pipelines/__init__.pyi").exists()
+    assert (tmp_path / "typings/pyspark-stubs/py.typed").read_text() == "partial\n"
+    assert (tmp_path / "__builtins__.pyi").exists()
 
     second = run_setup(tmp_path)
     assert "unchanged .zed/tasks.json" in second.stdout
@@ -191,6 +197,8 @@ def test_setup_project_installs_templates_and_is_idempotent(tmp_path):
 def test_setup_project_never_overwrites_existing_config(tmp_path):
     (tmp_path / ".zed").mkdir()
     (tmp_path / ".zed/tasks.json").write_text("[]\n")
+    (tmp_path / "__builtins__.pyi").write_text("x: int\n")
     run_setup(tmp_path)
     assert (tmp_path / ".zed/tasks.json").read_text() == "[]\n"
+    assert (tmp_path / "__builtins__.pyi").read_text() == "x: int\n"
     assert (tmp_path / ".zed/databricks.tasks.json").exists()

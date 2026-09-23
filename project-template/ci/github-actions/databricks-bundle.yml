@@ -1,0 +1,62 @@
+# Databricks bundle CI/CD (zed-databricks template). Copy to .github/workflows/.
+#
+# - Pull requests: validate against staging.
+# - main: deploy to staging.
+# - Manual run ("Run workflow"): deploy to prod, gated by the `prod` GitHub environment.
+#
+# Authenticates as a service principal (OAuth M2M). Per GitHub environment, set:
+#   vars:    DATABRICKS_HOST, DATABRICKS_CLIENT_ID
+#   secrets: DATABRICKS_CLIENT_SECRET
+name: Databricks bundle
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: databricks-bundle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: databricks/setup-cli@v1.17.0
+      - run: databricks bundle validate --target staging --strict
+
+  deploy-staging:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: databricks/setup-cli@v1.17.0
+      - run: databricks bundle validate --target staging --strict
+      - run: databricks bundle deploy --target staging
+
+  deploy-prod:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    env:
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: databricks/setup-cli@v1.17.0
+      - run: databricks bundle validate --target prod --strict
+      - run: databricks bundle deploy --target prod

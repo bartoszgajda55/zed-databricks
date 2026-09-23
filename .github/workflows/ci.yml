@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: databricks/setup-cli@v1.17.0
+      - run: uv sync
+      # Snippets, templates, stubs, local Spark integration and the MCP server (fake CLI).
+      - run: uv run pytest
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            servers/databricks-bundle-ls
+      - uses: databricks/setup-cli@v1.17.0
+      - name: Extension (wasm)
+        run: |
+          cargo build --release --target wasm32-wasip2
+          cargo test
+      - name: databricks-bundle-ls
+        working-directory: servers/databricks-bundle-ls
+        run: cargo test

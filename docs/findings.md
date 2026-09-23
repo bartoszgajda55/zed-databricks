@@ -1,6 +1,6 @@
-# MVP findings (2026-09-23)
+# Findings (2026-09-23)
 
-Answers to the spec's open questions and the Zed API constraints behind the MVP's design. Checked against zed-industries/zed `main`, Databricks CLI v1.7.0 and yaml-language-server 1.24.0.
+Answers to the spec's open questions, plus the Zed, Databricks CLI and Spark constraints behind the design. Checked against zed-industries/zed `main`, Databricks CLI v1.7.0 and yaml-language-server 1.24.0.
 
 ## Can an extension ship default Tasks? No.
 `ExtensionManifest` has no `tasks` field. Only languages that an extension defines itself can carry tasks, and Zed's YAML and Python languages are built in. Component 4 therefore ships as `project-template/.zed/tasks.json` plus `scripts/setup-project.sh`.
@@ -39,3 +39,44 @@ Plain `CREATE STREAMING TABLE` / `CREATE MATERIALIZED VIEW` works on both OSS Sp
 - **Bundle `run` without a key:** the CLI prompts interactively for a resource, which works in Zed's task terminal.
 - **Bundle `destroy`:** asks for confirmation on its own unless it's given `--auto-approve`.
 - **Cluster policies:** they aren't a bundle resource type. The spec's "cluster policy" snippet is a job/all-purpose cluster governed by `policy_id`, plus a `lookup: cluster_policy` variable snippet.
+
+---
+
+# v1 findings
+
+## Does `pyspark.pipelines` have adequate type stubs upstream? Only for OSS.
+PySpark 4.2 ships inline types (`py.typed`). In Databricks pipeline code, basedpyright still reports five kinds of false error:
+- `expect*` is not a known attribute of `pyspark.pipelines`.
+- `stored_as_scd_type=2` is rejected; OSS accepts only `Literal[1]`.
+- `spark`, `dbutils` and `display` are undefined.
+
+**Fix:** a *partial* stub package, `typings/pyspark-stubs` with `py.typed` = `partial`.
+- basedpyright resolves it from the default `stubPath`.
+- It overrides only `pyspark.pipelines`; the rest of `pyspark` still comes from the installed package.
+- `__builtins__.pyi` defines the runtime globals. It re-exports `dbutils`/`display` from `databricks.sdk.runtime`, which is fully typed when the SDK is installed and still defined when it isn't.
+- Legacy `import dlt`: Databricks publishes `databricks-dlt`. A local stub-only module would get "could not be resolved from source" errors.
+
+## Ruff and the runtime globals
+Ruff's default rules include F821 (undefined name), which flags `spark` and `dbutils`. With `ruff server` 0.16.8:
+- Inline editor configuration (`initialization_options.settings.configuration`) merges over the project's ruff config.
+- Only the top-level `builtins` key takes effect there; `lint.builtins` is ignored in inline configuration, although the CLI accepts both.
+
+## `databricks bundle validate` output
+- Diagnostics are text on stderr only. `--output json` changes stdout to the resolved config, which is printed even when validation fails.
+- The format (`libs/cmdio/render.go`) is the same in v1.7.0 and v1.17.0.
+- CLI log lines (`Warn: [hostmetadata] …`) are interleaved with diagnostics and must be skipped.
+- Some workspace errors have no location, e.g. `notebook src/x.ipynb not found`. The server places them on the only YAML line that names the file.
+- The resolved config includes the current user's email and group memberships. The MCP graph tool doesn't pass them through.
+
+## Workspace token scopes
+The `bundle` scopes alone are not enough. Validating a realistic bundle needs `workspace`, because it checks synced paths and reads deployment state. Deploying also needs the scope of each resource API: `jobs`, `pipelines`, and so on. The MCP tools additionally need `clusters`, `unity-catalog` and `secrets`.
+
+## MCP Python SDK 2.x
+- `FastMCP` was renamed to `mcp.server.mcpserver.MCPServer`.
+- Exceptions other than `ToolError` reach clients only as "Error executing tool X", so anticipated failures must subclass `ToolError`.
+- `ToolAnnotations` fields are snake_case attributes, although they are constructed with camelCase keywords.
+- Registry `server.json` descriptions are limited to 100 characters. PyPI ownership is verified by `mcp-name: <server name>` in the README.
+
+## Distribution caveats
+- The extension downloads `databricks-bundle-ls` from GitHub releases, which isn't possible while the repository is private. Until then, users install it onto `PATH`.
+- The server is registered for every YAML file but does nothing outside a bundle. If it can't be started, Zed shows the error in the language-server status.

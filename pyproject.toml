@@ -16,6 +16,9 @@ dev = [
     "chispa>=0.10",
     "databricks-dev-mcp",
     "pytest-asyncio>=1.4",
+    "basedpyright>=1.40.1",
+    "ruff>=0.16.8",
+    "databricks-sdk>=0.141.0",
 ]
 
 [tool.uv]

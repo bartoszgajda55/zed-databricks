@@ -1,0 +1,71 @@
+# Databricks bundle CI/CD for Azure DevOps (zed-databricks template).
+#
+# - Pull requests: validate against staging.
+# - main: deploy to staging, then prod (approval gate on the `databricks-prod` environment).
+#
+# Authenticates as a service principal (OAuth M2M). Create variable groups
+# `databricks-staging` and `databricks-prod` with DATABRICKS_HOST, DATABRICKS_CLIENT_ID and the
+# secret DATABRICKS_CLIENT_SECRET (secrets must be mapped into env explicitly, as below).
+trigger:
+  branches:
+    include: [main]
+
+pr:
+  branches:
+    include: ["*"]
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  DATABRICKS_CLI_VERSION: 1.17.0
+
+stages:
+  - stage: Validate
+    variables:
+      - group: databricks-staging
+    jobs:
+      - job: validate
+        steps:
+          - template: /ci/azure-devops/steps-setup-cli.yml
+          - script: databricks bundle validate --target staging --strict
+            env:
+              DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
+
+  - stage: DeployStaging
+    dependsOn: Validate
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+    variables:
+      - group: databricks-staging
+    jobs:
+      - deployment: deploy
+        environment: databricks-staging
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - template: /ci/azure-devops/steps-setup-cli.yml
+                - script: databricks bundle deploy --target staging
+                  env:
+                    DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
+
+  - stage: DeployProd
+    dependsOn: DeployStaging
+    condition: succeeded()
+    variables:
+      - group: databricks-prod
+    jobs:
+      - deployment: deploy
+        environment: databricks-prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - template: /ci/azure-devops/steps-setup-cli.yml
+                - script: |
+                    databricks bundle validate --target prod --strict
+                    databricks bundle deploy --target prod
+                  env:
+                    DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)

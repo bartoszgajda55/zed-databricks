@@ -1,11 +1,13 @@
 #!/bin/sh
-# Wire a Databricks bundle project for Zed: copies the .zed/ task + settings templates
-# (the extension itself provides schema validation and diagnostics).
+# Wire a Databricks project for Zed: copies the .zed/ task + settings templates and the
+# Python type stubs for Databricks pipeline code (typings/pyspark-stubs, __builtins__.pyi).
+# The extension itself provides bundle schema validation and diagnostics.
 #
 # Usage: scripts/setup-project.sh [PROJECT_DIR]   (defaults to the current directory)
 set -eu
 
-TEMPLATE_DIR="$(cd "$(dirname "$0")/../project-template/.zed" && pwd)"
+TEMPLATE_ROOT="$(cd "$(dirname "$0")/../project-template" && pwd)"
+TEMPLATE_DIR="$TEMPLATE_ROOT/.zed"
 PROJECT_DIR="$(cd "${1:-.}" && pwd)"
 ZED_DIR="$PROJECT_DIR/.zed"
 
@@ -26,6 +28,21 @@ install_template() {
 }
 install_template tasks.json
 install_template settings.json
+
+# Python stubs: basedpyright (Zed's default) reads typings/ and __builtins__.pyi from the project root.
+if [ ! -e "$PROJECT_DIR/typings/pyspark-stubs" ]; then
+    mkdir -p "$PROJECT_DIR/typings"
+    cp -R "$TEMPLATE_ROOT/typings/pyspark-stubs" "$PROJECT_DIR/typings/pyspark-stubs"
+    echo "created   typings/pyspark-stubs"
+else
+    echo "exists    typings/pyspark-stubs (left unchanged)"
+fi
+if [ ! -e "$PROJECT_DIR/__builtins__.pyi" ]; then
+    cp "$TEMPLATE_ROOT/__builtins__.pyi" "$PROJECT_DIR/__builtins__.pyi"
+    echo "created   __builtins__.pyi"
+else
+    echo "exists    __builtins__.pyi (left unchanged; see project-template/__builtins__.pyi)"
+fi
 
 if ! command -v databricks >/dev/null 2>&1; then
     echo "warning: 'databricks' CLI not found on PATH; tasks, schema and diagnostics need it." >&2
