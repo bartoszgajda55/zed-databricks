@@ -107,4 +107,8 @@ The `bundle` scopes alone are not enough. Validating a realistic bundle needs `w
   - The SDK's portable pattern is a resolver: a parameter annotated `Annotated[ElicitationResult[T], Resolve(fn)]` whose resolver returns `Elicit(message, Model)`. The framework picks the transport for the negotiated protocol, and the parameter never appears in the tool's input schema.
   - A resolver may also return a plain value. That covers the no-op, job-cluster and no-elicitation cases without asking.
 - **"Stop" means terminate.** It uses `clusters delete` (restartable) with `--no-wait`, never `permanent-delete`. `clusters start` also waits by default (up to 20 minutes) unless given `--no-wait`.
-- **Not tested live:** the workspace has no clusters, so the live check covers only error handling for an unknown cluster ID. A real start/stop would need a cluster to be created.
+- **Verified live (2026-09-24)** on a throwaway single-node `Standard_F4s_v2` cluster (17.3 LTS, 10-minute auto-termination), which was permanently deleted afterwards. The confirmation answers came from a scripted client:
+  - A declined stop left the cluster running (checked over the legacy protocol).
+  - Accepted stops terminated it from `PENDING` and from `RUNNING`, in about 11 seconds each.
+  - Repeating a stop on a `TERMINATED` cluster, or a start on a `RUNNING` one, was a no-op.
+  - An accepted start went `TERMINATED` → `PENDING` → `RUNNING` in about 7.5 minutes.
