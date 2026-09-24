@@ -11,6 +11,7 @@ license = "MIT"
 keywords = ["databricks", "mcp", "declarative-automation-bundles", "spark-declarative-pipelines"]
 dependencies = [
     "mcp>=2.2",
+    "pydantic>=2",
 ]
 
 [project.scripts]

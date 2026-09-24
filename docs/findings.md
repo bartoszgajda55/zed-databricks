@@ -100,3 +100,11 @@ The `bundle` scopes alone are not enough. Validating a realistic bundle needs `w
 - **Floating tags:** `astral-sh/setup-uv` publishes no floating major tag (`@v10` fails), so it's pinned to a full version.
 - **PEP 440:** the Python package normalizes `0.2.0-rc.1` to `0.2.0rc1`. Pre-releases never publish to PyPI or the MCP registry, so the mismatch with `server.json` doesn't matter.
 - **Zed registry:** `huacnlee/zed-extension-action` only *updates* an extension already listed in zed-industries/extensions. The first submission is a manual PR, and it requires a public repository.
+
+# Cluster start/stop (MCP)
+
+- **`ctx.elicit()` doesn't work on the 2026-07-28 protocol.** It fails with "no back-channel for server-initiated requests": at that protocol version, elicitation travels in an `InputRequiredResult`, and the client retries the call with the answer.
+  - The SDK's portable pattern is a resolver: a parameter annotated `Annotated[ElicitationResult[T], Resolve(fn)]` whose resolver returns `Elicit(message, Model)`. The framework picks the transport for the negotiated protocol, and the parameter never appears in the tool's input schema.
+  - A resolver may also return a plain value. That covers the no-op, job-cluster and no-elicitation cases without asking.
+- **"Stop" means terminate.** It uses `clusters delete` (restartable) with `--no-wait`, never `permanent-delete`. `clusters start` also waits by default (up to 20 minutes) unless given `--no-wait`.
+- **Not tested live:** the workspace has no clusters, so the live check covers only error handling for an unknown cluster ID. A real start/stop would need a cluster to be created.

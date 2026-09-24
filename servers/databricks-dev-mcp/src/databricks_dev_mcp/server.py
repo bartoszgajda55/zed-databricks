@@ -7,11 +7,15 @@ they do in a terminal.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.elicitation import AcceptedElicitation, ElicitationResult
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.resolve import Elicit, Resolve
 from mcp.types import ToolAnnotations
+from pydantic import BaseModel, Field
 
 from . import cli, graph
 from .cli import CliError, truncate
@@ -21,6 +25,8 @@ Tools for Databricks development driven by the `databricks` CLI.
 - Bundle tools act on the bundle in `bundle_dir` (default: DATABRICKS_BUNDLE_ROOT or the server's working directory).
 - `target` / `profile` default to DATABRICKS_BUNDLE_TARGET / DATABRICKS_CONFIG_PROFILE, then the bundle's default target.
 - Validate before deploying. Deploys and runs change the workspace; production-mode targets need allow_production=true.
+- cluster_start / cluster_stop ask the user to confirm (MCP elicitation). If the client cannot ask, they return a
+  preview: show it to the user and only call again with confirm=true once the user agrees.
 - Secret tools only ever return scope and key names, never values.
 """
 
@@ -265,7 +271,10 @@ async def uc_lookup(catalog: str, schema: str | None = None, table: str | None =
 def _cluster_summary(cluster: dict[str, Any]) -> dict[str, Any]:
     return {
         k: cluster.get(k)
-        for k in ("cluster_id", "cluster_name", "state", "state_message", "spark_version", "node_type_id", "num_workers", "autoscale", "cluster_source")
+        for k in (
+            "cluster_id", "cluster_name", "state", "state_message", "spark_version", "node_type_id",
+            "num_workers", "autoscale", "autotermination_minutes", "cluster_source", "creator_user_name",
+        )
         if cluster.get(k) is not None
     }
 
@@ -283,6 +292,111 @@ async def cluster_status(cluster_id: str, profile: str | None = None) -> str:
     """State and configuration summary of one cluster."""
     data = (await cli.run("clusters", "get", cluster_id, "--output", "json", profile=profile)).raise_for_status().json()
     return _json(_cluster_summary(data))
+
+
+class Confirmation(BaseModel):
+    confirm: bool = Field(description="Proceed with this action?")
+
+
+ACTIVE_STATES = {"PENDING", "RUNNING", "RESIZING", "RESTARTING"}
+STOPPED_STATES = {"TERMINATING", "TERMINATED"}
+
+
+def _describe_cluster(cluster: dict[str, Any]) -> str:
+    size = (
+        f"autoscale {cluster['autoscale'].get('min_workers')}-{cluster['autoscale'].get('max_workers')} workers"
+        if cluster.get("autoscale")
+        else f"{cluster.get('num_workers', 0)} workers"
+    )
+    autotermination = cluster.get("autotermination_minutes")
+    return (
+        f"{cluster.get('cluster_name')!r} ({cluster.get('cluster_id')}): {cluster.get('state')}, "
+        f"{cluster.get('node_type_id')}, {size}, "
+        + (f"auto-terminates after {autotermination} min idle" if autotermination else "no auto-termination")
+    )
+
+
+@dataclass
+class Gate:
+    """A decision made without asking the user (resolver outcome)."""
+
+    proceed: bool
+    message: str = ""
+
+
+async def _gate(action: str, cluster_id: str, profile: str | None, confirm: bool, ctx: Context) -> Gate | Elicit[Confirmation]:
+    """Decide whether a start/stop may run, asking the user through the client when it can.
+
+    Runs as a resolver (see `Resolve`), so the answer comes from the user via MCP elicitation;
+    it cannot be supplied in the tool arguments by the agent.
+    """
+    cluster = (await cli.run("clusters", "get", cluster_id, "--output", "json", profile=profile)).raise_for_status().json()
+    state = cluster.get("state")
+    if (action == "start" and state in ACTIVE_STATES) or (action == "stop" and state in STOPPED_STATES):
+        return Gate(False, f"Nothing to do: cluster {_describe_cluster(cluster)}.")
+    if cluster.get("cluster_source") == "JOB":
+        raise CliError(f"{cluster_id} is a job cluster; it is managed by its job run (cancel the run instead)")
+
+    verb = "Start" if action == "start" else "Terminate"
+    consequence = (
+        "It will incur compute cost until it auto-terminates or is stopped."
+        if action == "start"
+        else "Running commands and attached notebooks/jobs are interrupted. The cluster can be started again."
+    )
+    question = f"{verb} cluster {_describe_cluster(cluster)}? {consequence}"
+
+    capabilities = ctx.client_capabilities
+    if capabilities is not None and capabilities.elicitation is not None:
+        return Elicit(question, Confirmation)
+    if not confirm:
+        raise CliError(f"Confirmation required. Ask the user: {question} Then call again with confirm=true.")
+    return Gate(True)
+
+
+async def _start_gate(cluster_id: str, profile: str | None, confirm: bool, ctx: Context) -> Gate | Elicit[Confirmation]:
+    return await _gate("start", cluster_id, profile, confirm, ctx)
+
+
+async def _stop_gate(cluster_id: str, profile: str | None, confirm: bool, ctx: Context) -> Gate | Elicit[Confirmation]:
+    return await _gate("stop", cluster_id, profile, confirm, ctx)
+
+
+async def _power(action: str, cluster_id: str, profile: str | None, approval: ElicitationResult[Any]) -> str:
+    verb = "Start" if action == "start" else "Terminate"
+    if not isinstance(approval, AcceptedElicitation):
+        raise CliError(f"{verb.lower()} of cluster {cluster_id} was not confirmed by the user; nothing changed")
+    decision = approval.data
+    if isinstance(decision, Gate) and not decision.proceed:
+        return decision.message
+    if isinstance(decision, Confirmation) and not decision.confirm:
+        raise CliError(f"{verb.lower()} of cluster {cluster_id} was not confirmed by the user; nothing changed")
+
+    command = ["clusters", "start" if action == "start" else "delete", cluster_id, "--no-wait"]
+    (await cli.run(*command, profile=profile)).raise_for_status()
+    after = (await cli.run("clusters", "get", cluster_id, "--output", "json", profile=profile)).raise_for_status().json()
+    return f"{verb} requested. Cluster {_describe_cluster(after)}. Use cluster_status to follow progress."
+
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True))
+async def cluster_start(
+    cluster_id: str,
+    approval: Annotated[ElicitationResult[Confirmation], Resolve(_start_gate)],
+    profile: str | None = None,
+    confirm: bool = False,
+) -> str:
+    """Start a terminated all-purpose cluster (asks the user to confirm; starting incurs cost). Returns without waiting."""
+    return await _power("start", cluster_id, profile, approval)
+
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True))
+async def cluster_stop(
+    cluster_id: str,
+    approval: Annotated[ElicitationResult[Confirmation], Resolve(_stop_gate)],
+    profile: str | None = None,
+    confirm: bool = False,
+) -> str:
+    """Terminate a running all-purpose cluster (asks the user to confirm). Restartable; never permanently deletes."""
+    return await _power("stop", cluster_id, profile, approval)
 
 
 # --- secrets (names only) ---------------------------------------------------------------

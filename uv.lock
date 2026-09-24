@@ -370,10 +370,14 @@ version = "0.2.0"
 source = { editable = "servers/databricks-dev-mcp" }
 dependencies = [
     { name = "mcp" },
+    { name = "pydantic" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "mcp", specifier = ">=2.2" }]
+requires-dist = [
+    { name = "mcp", specifier = ">=2.2" },
+    { name = "pydantic", specifier = ">=2" },
+]
 
 [[package]]
 name = "databricks-sdk"

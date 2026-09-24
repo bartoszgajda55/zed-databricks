@@ -17,6 +17,7 @@ An MCP server that gives agents access to Databricks bundles (Declarative Automa
 | `pipeline_run_status` | read | Pipeline state and recent updates, by pipeline ID or bundle key |
 | `uc_lookup` | read | Unity Catalog lookup: a catalog's schemas, a schema's tables, or one table's columns |
 | `cluster_list` / `cluster_status` | read | Clusters and their state |
+| `cluster_start` / `cluster_stop` | write | Starts or terminates an all-purpose cluster without waiting. **The user confirms each call.** Job clusters are refused, and `stop` terminates the cluster (restartable) instead of deleting it |
 | `secret_scopes_list` | read | Secret scope and key **names only**, never values |
 
 Bundle tools accept `target`, `profile`, `bundle_dir` and `variables` (`--var name=value`).
@@ -46,6 +47,10 @@ For **Zed**, add the block above under `context_servers` in `settings.json`, or 
 
 - **Tool annotations:** read tools are marked `readOnlyHint`. `bundle_deploy` is marked `destructiveHint`, because a deploy deletes resources that were removed from the configuration. Clients such as Zed ask before running write tools.
 - **Deploys:** the target must be named explicitly, and production-mode targets are refused unless `allow_production` is set.
+- **Cluster start/stop:** the server asks the *user* through MCP elicitation, using a resolver. The answer comes from the client, so the agent can't supply it. This works with both the 2026-07-28 input-required flow and older protocol versions.
+  - The question shows the cluster's name, size and auto-termination setting.
+  - If the user declines or cancels, nothing changes.
+  - Clients without elicitation get a preview instead, and must call again with `confirm=true`. Those clients still prompt for write tools themselves.
 - **Secrets:** secret values are never requested or returned.
 
 ## Development

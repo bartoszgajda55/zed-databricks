@@ -15,7 +15,7 @@ Zed has no webview or panel API, so the editor gets static knowledge (schema, di
 | Ruff | `.zed/settings.json` | Format on save, organized imports, and no F821 errors on `spark` / `dbutils` / `display`. |
 | Task library | `.zed/tasks.json` | `bundle validate / plan / deploy / run / summary / destroy`, `auth login / profiles / describe`, `spark-pipelines dry-run / run`, `pytest`. |
 | Debugging | `.zed/debug.json` + `.zed/databricks/connect_runner.py` | Breakpoints in driver-side PySpark with Zed's Debugpy adapter, while Spark runs on the bundle target's cluster or on serverless through Databricks Connect. |
-| Agent tools | [`databricks-dev` MCP server](servers/databricks-dev-mcp) | Validate, deploy and run bundles; explain the bundle graph; run status and logs; Unity Catalog lookup; clusters; secret scope names. |
+| Agent tools | [`databricks-dev` MCP server](servers/databricks-dev-mcp) | Validate, deploy and run bundles; explain the bundle graph; run status and logs; Unity Catalog lookup; list, inspect, start and stop clusters (start/stop confirmed by the user); secret scope names. |
 | CI/CD templates | `project-template/ci/` | GitHub Actions and Azure DevOps pipelines: validate on PR, deploy to staging, gated prod. |
 
 ## Install

@@ -198,3 +198,78 @@ def test_server_json_matches_package_and_registry_schema():
     except OSError:
         pytest.skip("registry schema not reachable")
     jsonschema.Draft7Validator(schema).validate(manifest)
+
+
+# --- cluster start/stop (confirmation-guarded) ----------------------------------------------
+
+
+def elicitation(answer: bool | None, seen: list):
+    """Client-side elicitation handler: the *user* accepts (True), declines (False) or cancels (None)."""
+    from mcp import types
+
+    async def callback(context, params):
+        seen.append(params.message)
+        if answer is None:
+            return types.ElicitResult(action="cancel")
+        return types.ElicitResult(action="accept", content={"confirm": answer})
+
+    return callback
+
+
+def power_calls(calls):
+    return [c for c in calls() if c[:2] in (["clusters", "start"], ["clusters", "delete"], ["clusters", "permanent-delete"])]
+
+
+# "auto" negotiates the 2026-07-28 protocol (elicitation via an input-required round trip);
+# "legacy" uses <= 2025-11-25, where the server sends elicitation/create mid-call.
+PROTOCOLS = pytest.mark.parametrize("mode", ["auto", "legacy"])
+
+
+@PROTOCOLS
+async def test_cluster_start_asks_the_user_and_does_not_wait(fake_cli, mode):
+    env, calls = fake_cli
+    seen = []
+    params = StdioServerParameters(command=str(SERVER), env=env)
+    async with Client(params, elicitation_callback=elicitation(True, seen), mode=mode) as c:
+        result = await c.call_tool("cluster_start", {"cluster_id": "c-term"})
+    assert not result.is_error, text(result)
+    assert "Start cluster 'dev' (c-term): TERMINATED" in seen[0] and "auto-terminates after 30 min" in seen[0]
+    assert power_calls(calls) == [["clusters", "start", "c-term", "--no-wait"]]
+    assert "PENDING" in text(result)
+
+
+@PROTOCOLS
+@pytest.mark.parametrize("answer", [False, None], ids=["declined", "cancelled"])
+async def test_cluster_stop_without_user_consent_changes_nothing(fake_cli, answer, mode):
+    env, calls = fake_cli
+    params = StdioServerParameters(command=str(SERVER), env=env)
+    async with Client(params, elicitation_callback=elicitation(answer, []), mode=mode) as c:
+        # confirm=true from the agent does not override the user's answer.
+        result = await c.call_tool("cluster_stop", {"cluster_id": "c-run", "confirm": True})
+    assert result.is_error and "not confirmed by the user" in text(result)
+    assert power_calls(calls) == []
+
+
+@PROTOCOLS
+async def test_without_elicitation_a_preview_is_returned_until_confirmed(fake_cli, mode):
+    env, calls = fake_cli
+    async with Client(StdioServerParameters(command=str(SERVER), env=env), mode=mode) as c:
+        preview = await c.call_tool("cluster_stop", {"cluster_id": "c-run"})
+        assert preview.is_error
+        assert "Confirmation required" in text(preview) and "autoscale 1-4 workers" in text(preview)
+        assert power_calls(calls) == []
+        done = await c.call_tool("cluster_stop", {"cluster_id": "c-run", "confirm": True})
+    assert not done.is_error and "TERMINATING" in text(done)
+    # Terminate (restartable), never permanent-delete.
+    assert power_calls(calls) == [["clusters", "delete", "c-run", "--no-wait"]]
+
+
+async def test_noop_states_and_job_clusters_are_not_touched(fake_cli):
+    env, calls = fake_cli
+    async with client(env) as c:
+        running = text(await c.call_tool("cluster_start", {"cluster_id": "c-run", "confirm": True}))
+        stopped = text(await c.call_tool("cluster_stop", {"cluster_id": "c-term", "confirm": True}))
+        job = await c.call_tool("cluster_stop", {"cluster_id": "c-job", "confirm": True})
+    assert running.startswith("Nothing to do") and stopped.startswith("Nothing to do")
+    assert job.is_error and "job cluster" in text(job)
+    assert power_calls(calls) == []
