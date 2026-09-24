@@ -3,7 +3,7 @@
   "name": "io.github.bartoszgajda55/databricks-dev",
   "title": "Databricks Dev",
   "description": "Deploy, run and inspect Databricks bundles, jobs, pipelines and Unity Catalog via the databricks CLI",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "repository": {
     "url": "https://github.com/bartoszgajda55/zed-databricks",
     "source": "github",
@@ -14,9 +14,11 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "databricks-dev-mcp",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "runtimeHint": "uvx",
-      "transport": { "type": "stdio" },
+      "transport": {
+        "type": "stdio"
+      },
       "environmentVariables": [
         {
           "name": "DATABRICKS_CONFIG_PROFILE",

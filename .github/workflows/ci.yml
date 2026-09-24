@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Reused by release.yml to test the tagged commit.
+  workflow_call:
 
 jobs:
   python:

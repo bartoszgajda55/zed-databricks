@@ -1,5 +1,19 @@
-# Builds databricks-bundle-ls for every platform the extension downloads it for, on `v*` tags.
-# Asset names must match `bundle_schema::release_target` in src/.
+# Release everything from one `vX.Y.Z` tag (create it with `scripts/release.py bump X.Y.Z`):
+#
+#   verify ─┬─ test ──────────────┐
+#           ├─ build-bundle-ls (5)├─ github-release ─┬─ publish-pypi ── publish-mcp-registry
+#           └─ build-mcp ─────────┘                  └─ publish-zed-extension
+#
+# Pre-release tags (`v1.2.0-rc.1`) stop after the GitHub release, which is marked as a
+# pre-release (the extension only downloads full releases).
+#
+# Publishing is opt-in per target through repository variables, so the pipeline runs before
+# the accounts exist:
+#   PUBLISH_PYPI=true           PyPI trusted publisher for this repo/workflow, environment `pypi`
+#   PUBLISH_MCP_REGISTRY=true   MCP registry via GitHub OIDC (io.github.<owner>/*); needs PyPI first
+#   PUBLISH_ZED_EXTENSION=true  PR to zed-industries/extensions from a fork (vars.ZED_EXTENSIONS_FORK),
+#                               token secrets.ZED_EXTENSIONS_TOKEN (scopes: repo, workflow).
+#                               The first submission must be a manual PR.
 name: Release
 
 on:
@@ -7,10 +21,34 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  build:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tag matches every manifest
+        run: python3 scripts/release.py check --tag "$GITHUB_REF"
+      - id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+  test:
+    needs: verify
+    uses: ./.github/workflows/ci.yml
+
+  build-bundle-ls:
+    needs: verify
     strategy:
       matrix:
         include:
@@ -33,22 +71,102 @@ jobs:
         run: |
           bin=databricks-bundle-ls
           [[ "${{ matrix.target }}" == *windows* ]] && bin=$bin.exe
-          # The binary sits at the archive root: the extension unpacks it into a versioned directory.
+          # Asset names must match `bundle_schema::release_target` in src/; the binary sits at the
+          # archive root because the extension unpacks it into a versioned directory.
           tar -czf databricks-bundle-ls-${{ matrix.target }}.tar.gz \
             -C servers/databricks-bundle-ls/target/${{ matrix.target }}/release $bin
+      - name: Smoke test
+        if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        run: |
+          mkdir smoke && tar -xzf databricks-bundle-ls-${{ matrix.target }}.tar.gz -C smoke
+          smoke/databricks-bundle-ls --version | grep -q "databricks-bundle-ls ${{ needs.verify.outputs.version }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: databricks-bundle-ls-${{ matrix.target }}
+          name: bundle-ls-${{ matrix.target }}
           path: databricks-bundle-ls-${{ matrix.target }}.tar.gz
 
-  release:
-    needs: build
+  build-mcp:
+    needs: verify
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv build --package databricks-dev-mcp --out-dir dist
+      - name: Smoke test the wheel
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | timeout 60 uvx --from dist/*.whl databricks-dev-mcp | grep -q '"databricks-dev"'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcp-dist
+          path: dist/
+
+  github-release:
+    needs: [verify, test, build-bundle-ls, build-mcp]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v8
         with:
+          path: assets
           merge-multiple: true
+      - name: Checksums
+        working-directory: assets
+        run: sha256sum * > SHA256SUMS && cat SHA256SUMS
       - uses: softprops/action-gh-release@v3
         with:
-          files: databricks-bundle-ls-*.tar.gz
+          files: assets/*
+          prerelease: ${{ needs.verify.outputs.prerelease == 'true' }}
           generate_release_notes: true
+
+  publish-pypi:
+    needs: [verify, github-release]
+    if: needs.verify.outputs.prerelease == 'false' && vars.PUBLISH_PYPI == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/databricks-dev-mcp
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: mcp-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-mcp-registry:
+    needs: [verify, publish-pypi]
+    if: needs.verify.outputs.prerelease == 'false' && vars.PUBLISH_MCP_REGISTRY == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install mcp-publisher
+        run: curl -fsSL https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz | tar -xz mcp-publisher
+      - name: Wait for the PyPI release to be visible
+        run: |
+          for _ in $(seq 30); do
+            curl -fsS "https://pypi.org/pypi/databricks-dev-mcp/${{ needs.verify.outputs.version }}/json" > /dev/null && exit 0
+            sleep 10
+          done
+          exit 1
+      - run: ./mcp-publisher login github-oidc
+      - run: ../../mcp-publisher publish
+        working-directory: servers/databricks-dev-mcp
+
+  publish-zed-extension:
+    needs: [verify, github-release]
+    if: needs.verify.outputs.prerelease == 'false' && vars.PUBLISH_ZED_EXTENSION == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: huacnlee/zed-extension-action@v2
+        with:
+          extension-name: databricks
+          push-to: ${{ vars.ZED_EXTENSIONS_FORK }}
+        env:
+          COMMITTER_TOKEN: ${{ secrets.ZED_EXTENSIONS_TOKEN }}
