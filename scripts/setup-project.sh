@@ -28,6 +28,18 @@ install_template() {
 }
 install_template tasks.json
 install_template settings.json
+install_template debug.json
+
+# Databricks Connect runner used by debug.json and the databricks-connect task.
+if [ ! -e "$ZED_DIR/databricks/connect_runner.py" ]; then
+    mkdir -p "$ZED_DIR/databricks"
+    cp "$TEMPLATE_DIR/databricks/connect_runner.py" "$ZED_DIR/databricks/connect_runner.py"
+    echo "created   .zed/databricks/connect_runner.py"
+elif cmp -s "$TEMPLATE_DIR/databricks/connect_runner.py" "$ZED_DIR/databricks/connect_runner.py"; then
+    echo "unchanged .zed/databricks/connect_runner.py"
+else
+    echo "exists    .zed/databricks/connect_runner.py (left unchanged)"
+fi
 
 # Python stubs: basedpyright (Zed's default) reads typings/ and __builtins__.pyi from the project root.
 if [ ! -e "$PROJECT_DIR/typings/pyspark-stubs" ]; then

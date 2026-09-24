@@ -1,0 +1,24 @@
+// Databricks Connect debug scenarios for Zed (generated from zed-databricks/project-template).
+// Driver-side code runs locally under debugpy, so breakpoints work; Spark work runs on the
+// bundle target's cluster or on serverless (see .zed/databricks/connect_runner.py).
+// Requires `databricks-connect` in the project's Python environment (the selected toolchain).
+[
+  {
+    "label": "Databricks Connect: debug current file",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/.zed/databricks/connect_runner.py",
+    "args": ["$ZED_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "justMyCode": true
+  },
+  {
+    "label": "Databricks Connect: debug pytest (current file)",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/.zed/databricks/connect_runner.py",
+    "args": ["-m", "pytest", "$ZED_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "justMyCode": true
+  }
+]

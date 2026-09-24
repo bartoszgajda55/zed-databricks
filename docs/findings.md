@@ -80,3 +80,23 @@ The `bundle` scopes alone are not enough. Validating a realistic bundle needs `w
 ## Distribution caveats
 - The extension downloads `databricks-bundle-ls` from GitHub releases, which isn't possible while the repository is private. Until then, users install it onto `PATH`.
 - The server is registered for every YAML file but does nothing outside a bundle. If it can't be started, Zed shows the error in the language-server status.
+
+---
+
+# Debugger (Component 6)
+
+- **No custom debug adapter needed.** With Databricks Connect, driver code runs in the local Python process, so Zed's built-in `Debugpy` adapter can debug it directly, and Zed already manages debugpy. The Databricks-specific part is session setup: compute, profile and runtime globals. A runner script that `debug.json` launches handles it, which keeps the extension free of adapter download and version logic.
+- **Compute from the bundle target.** A target's `cluster_id` appears as `bundle.cluster_id` in `databricks bundle validate --output json`. Without one, the runner uses serverless.
+- **Databricks Connect 19.1:**
+  - It requires Python `==3.12.*`, and it replaces `pyspark`, so it can't share an environment with OSS `pyspark`.
+  - `DatabricksSession.builder.profile(p).serverless(True)` (or `.clusterId(id)`) works.
+  - After that, `SparkSession.builder.getOrCreate()` returns the same session.
+- **SDK `dbutils` differs from the runtime's.** In the SDK, `dbutils.fs.ls("/Volumes")` fails with `Bad Request`: it needs a volume path, unlike on a cluster.
+- **Verified live on serverless.** A breakpoint in a local file paused under `python -m debugpy.adapter`, and `spark.range(7).count()` evaluated at the breakpoint.
+- **Scope:** code inside UDFs runs on the cluster, so its breakpoints are not hit.
+
+# Release pipeline
+
+- **Floating tags:** `astral-sh/setup-uv` publishes no floating major tag (`@v10` fails), so it's pinned to a full version.
+- **PEP 440:** the Python package normalizes `0.2.0-rc.1` to `0.2.0rc1`. Pre-releases never publish to PyPI or the MCP registry, so the mismatch with `server.json` doesn't matter.
+- **Zed registry:** `huacnlee/zed-extension-action` only *updates* an extension already listed in zed-industries/extensions. The first submission is a manual PR, and it requires a public repository.

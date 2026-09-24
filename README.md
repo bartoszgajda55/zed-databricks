@@ -14,6 +14,7 @@ Zed has no webview or panel API, so the editor gets static knowledge (schema, di
 | Python types | `typings/pyspark-stubs`, `__builtins__.pyi` | basedpyright understands Databricks-only pipeline APIs (`expect*`, SCD type 2 AUTO CDC, …) and the runtime globals `spark`, `dbutils` and `display`. |
 | Ruff | `.zed/settings.json` | Format on save, organized imports, and no F821 errors on `spark` / `dbutils` / `display`. |
 | Task library | `.zed/tasks.json` | `bundle validate / plan / deploy / run / summary / destroy`, `auth login / profiles / describe`, `spark-pipelines dry-run / run`, `pytest`. |
+| Debugging | `.zed/debug.json` + `.zed/databricks/connect_runner.py` | Breakpoints in driver-side PySpark with Zed's Debugpy adapter, while Spark runs on the bundle target's cluster or on serverless through Databricks Connect. |
 | Agent tools | [`databricks-dev` MCP server](servers/databricks-dev-mcp) | Validate, deploy and run bundles; explain the bundle graph; run status and logs; Unity Catalog lookup; clusters; secret scope names. |
 | CI/CD templates | `project-template/ci/` | GitHub Actions and Azure DevOps pipelines: validate on PR, deploy to staging, gated prod. |
 
@@ -62,6 +63,20 @@ Open them with `task: spawn`.
 - **Runtime globals:** `__builtins__.pyi` defines `spark` and `sc`. It also defines `dbutils`, `display` and `displayHTML`, which are fully typed when `databricks-sdk` or `databricks-connect` is installed.
 - **Legacy `import dlt` code:** install Databricks' `databricks-dlt` package.
 
+### Debugging with Databricks Connect
+
+Press F4 and choose **Databricks Connect: debug current file**, or **debug pytest (current file)**. Driver-side code runs locally under debugpy, so breakpoints, stepping and the debug console work as usual. Spark operations run remotely. Code inside UDFs runs on the cluster, so breakpoints there won't stop.
+
+`connect_runner.py` creates the Databricks Connect session before running your file. It also provides `spark`, `dbutils` and `display`, so notebook-style scripts run unchanged, and `SparkSession.builder.getOrCreate()` returns the same session.
+
+It chooses compute and profile in this order:
+- **Compute:** `--cluster-id` / `--serverless`, then `DATABRICKS_CLUSTER_ID`, then the bundle target's `cluster_id`, then serverless.
+- **Profile:** `DATABRICKS_CONFIG_PROFILE`, then `.zed/settings.json` `terminal.env`.
+
+Install `databricks-connect` in the project's Python environment. Its version must match your compute (for example, serverless or DBR 17 → 17.x).
+
+The same runner is available without the debugger as the task **databricks-connect: run current file**.
+
 ### Snippets
 
 Snippets whose description says **Databricks only** use syntax OSS Spark lacks: expectations, Auto Loader / `read_files`, and SQL `AUTO CDC`. The CDC snippets default to SCD type 1, the only type OSS Spark supports.
@@ -83,6 +98,25 @@ Layout:
 - `project-template/`: files that `setup-project.sh` copies, plus the CI templates.
 - `docs/`: findings about Zed, the CLI and Spark that shaped the design.
 
-Releases: pushing a `v*` tag builds `databricks-bundle-ls` for Linux, macOS and Windows (x64 and arm64) and attaches the binaries to the GitHub release.
+### Releasing
+
+One version covers the whole repository.
+
+```sh
+uv run scripts/release.py bump 0.3.0   # rewrites all manifests and lockfiles, commits, tags v0.3.0
+git push origin main v0.3.0
+```
+
+Pushing the tag starts `.github/workflows/release.yml`:
+1. Checks that the tag matches every manifest.
+2. Runs the full CI.
+3. Builds `databricks-bundle-ls` for 5 platforms and the MCP wheel, and smoke-tests both.
+4. Creates the GitHub release with `SHA256SUMS`.
+5. Publishes, when switched on by repository variables:
+   - PyPI (`PUBLISH_PYPI`), using trusted publishing
+   - the MCP registry (`PUBLISH_MCP_REGISTRY`), using GitHub OIDC
+   - the Zed extension registry (`PUBLISH_ZED_EXTENSION`), with `vars.ZED_EXTENSIONS_FORK` and `secrets.ZED_EXTENSIONS_TOKEN`
+
+Pre-release tags (`v0.3.0-rc.1`) stop after the GitHub release and mark it as a pre-release. The one-time setup for each publish target is described in the workflow header.
 
 Snippet authoring note: Zed inserts an **empty string** for a bare mirrored tabstop (`$1`), so repeat the default at every occurrence (`${1:my_job}` … `${1:my_job}`). The tests enforce this.

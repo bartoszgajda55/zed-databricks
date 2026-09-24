@@ -79,6 +79,11 @@
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
+    "label": "databricks-connect: run current file",
+    "command": "PATH=\"$ZED_WORKTREE_ROOT/.venv/bin:$PATH\" python .zed/databricks/connect_runner.py \"$ZED_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
     "label": "sdp: dry-run pipeline spec (current file)",
     "command": "PATH=\"$ZED_WORKTREE_ROOT/.venv/bin:$PATH\" spark-pipelines dry-run --spec \"$ZED_FILE\"",
     "cwd": "$ZED_WORKTREE_ROOT"

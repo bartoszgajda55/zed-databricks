@@ -189,6 +189,8 @@ def test_setup_project_installs_templates_and_is_idempotent(tmp_path):
     assert (tmp_path / "typings/pyspark-stubs/pipelines/__init__.pyi").exists()
     assert (tmp_path / "typings/pyspark-stubs/py.typed").read_text() == "partial\n"
     assert (tmp_path / "__builtins__.pyi").exists()
+    assert (tmp_path / ".zed/debug.json").exists()
+    assert (tmp_path / ".zed/databricks/connect_runner.py").read_text() == (TEMPLATE / "databricks/connect_runner.py").read_text()
 
     second = run_setup(tmp_path)
     assert "unchanged .zed/tasks.json" in second.stdout
