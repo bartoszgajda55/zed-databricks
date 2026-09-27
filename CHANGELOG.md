@@ -4,6 +4,8 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
 First public release.
 
 ### Extension
