@@ -4,6 +4,10 @@
 //! the target chosen by [`validate::select`]. It is a thin wrapper around the CLI: no bundle
 //! semantics are reimplemented here.
 
+// `lsp_types::Uri` (0.97) caches parsed parts in a `Cell`, but its `Hash` and `Eq` only read
+// `as_str()`, so using it as a map key is sound.
+#![allow(clippy::mutable_key_type)]
+
 mod cli_output;
 mod validate;
 
@@ -20,7 +24,7 @@ use lsp_types::notification::{
 use lsp_types::{
     Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, InitializeParams, Location, LogMessageParams,
     MessageType, Position, PublishDiagnosticsParams, Range, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, TextDocumentSyncSaveOptions, Url,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextDocumentSyncSaveOptions, Uri,
 };
 
 use cli_output::{CliDiagnostic, Severity};
@@ -147,7 +151,7 @@ fn handle_notification(notification: Notification, context: &Context, known_root
         _ => return,
     };
 
-    let Ok(path) = uri.to_file_path() else { return };
+    let Some(path) = file_path(&uri) else { return };
     let Some(root) = validate::find_bundle_root(&path) else {
         return;
     };
@@ -162,7 +166,7 @@ struct Worker {
     sender: crossbeam_channel::Sender<Message>,
     settings: Arc<Mutex<Settings>>,
     /// Files that currently carry diagnostics, per bundle root, so stale ones can be cleared.
-    published: HashMap<PathBuf, HashSet<Url>>,
+    published: HashMap<PathBuf, HashSet<Uri>>,
 }
 
 impl Worker {
@@ -205,7 +209,7 @@ impl Worker {
                     message,
                     ..Default::default()
                 };
-                Url::from_file_path(file)
+                file_uri(&file)
                     .map(|uri| HashMap::from([(uri, vec![diagnostic])]))
                     .unwrap_or_default()
             }
@@ -222,7 +226,7 @@ impl Worker {
         }
     }
 
-    fn publish(&self, uri: Url, diagnostics: Vec<Diagnostic>) {
+    fn publish(&self, uri: Uri, diagnostics: Vec<Diagnostic>) {
         let params = PublishDiagnosticsParams {
             uri,
             diagnostics,
@@ -247,10 +251,20 @@ fn log_message(sender: &crossbeam_channel::Sender<Message>, typ: MessageType, me
     )));
 }
 
+/// `file://` URI for an absolute path, percent-encoded as `url` does it (Windows drive letters included).
+fn file_uri(path: &Path) -> Option<Uri> {
+    url::Url::from_file_path(path).ok()?.as_str().parse().ok()
+}
+
+/// Local path of a `file://` URI from the client.
+fn file_path(uri: &Uri) -> Option<PathBuf> {
+    url::Url::parse(uri.as_str()).ok()?.to_file_path().ok()
+}
+
 /// Groups CLI diagnostics by file. Diagnostics without a location go on the root config file.
-fn to_lsp(root: &Path, diagnostics: &[CliDiagnostic], source: &str) -> HashMap<Url, Vec<Diagnostic>> {
+fn to_lsp(root: &Path, diagnostics: &[CliDiagnostic], source: &str) -> HashMap<Uri, Vec<Diagnostic>> {
     let mut lines_cache: HashMap<PathBuf, Vec<String>> = HashMap::new();
-    let mut by_file: HashMap<Url, Vec<Diagnostic>> = HashMap::new();
+    let mut by_file: HashMap<Uri, Vec<Diagnostic>> = HashMap::new();
 
     for cli in diagnostics {
         let locations: Vec<(PathBuf, Range)> = cli
@@ -282,7 +296,7 @@ fn to_lsp(root: &Path, diagnostics: &[CliDiagnostic], source: &str) -> HashMap<U
             .cloned()
             .or_else(|| locate_mentioned_path(root, &cli.summary))
             .unwrap_or_else(|| (validate::root_config_file(root), Range::default()));
-        let Ok(uri) = Url::from_file_path(&primary_path) else {
+        let Some(uri) = file_uri(&primary_path) else {
             continue;
         };
         // Secondary locations (e.g. a value defined in several files) become related information.
@@ -292,7 +306,7 @@ fn to_lsp(root: &Path, diagnostics: &[CliDiagnostic], source: &str) -> HashMap<U
             .filter_map(|(path, range)| {
                 Some(DiagnosticRelatedInformation {
                     location: Location {
-                        uri: Url::from_file_path(path).ok()?,
+                        uri: file_uri(path)?,
                         range: *range,
                     },
                     message: "also defined here".into(),
@@ -482,10 +496,10 @@ mod tests {
             },
         ];
         let by_file = to_lsp(dir.path(), &diagnostics, "src");
-        let job = &by_file[&Url::from_file_path(dir.path().join("resources/job.yml")).unwrap()];
+        let job = &by_file[&file_uri(&dir.path().join("resources/job.yml")).unwrap()];
         assert_eq!(job[0].range, Range::new(Position::new(3, 6), Position::new(3, 11)));
         assert_eq!(job[0].severity, Some(DiagnosticSeverity::WARNING));
-        let root = &by_file[&Url::from_file_path(dir.path().join("databricks.yml")).unwrap()];
+        let root = &by_file[&file_uri(&dir.path().join("databricks.yml")).unwrap()];
         assert_eq!(root[0].message, "cannot authenticate\n\ncheck your profile");
     }
 }

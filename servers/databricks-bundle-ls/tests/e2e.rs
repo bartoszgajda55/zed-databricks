@@ -6,8 +6,8 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use lsp_types::Url;
 use serde_json::{json, Value};
+use url::Url;
 
 struct Client {
     child: Child,
