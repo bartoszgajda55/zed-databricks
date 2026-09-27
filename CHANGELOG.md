@@ -17,7 +17,7 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ### Fixed
 - The debug runner failed with a bare `ModuleNotFoundError` when Zed ran it with a Python lacking `databricks-connect`; it now names that Python and says how to fix it (select the project's `.venv`, or run `environments setup-local`).
-- Task banners always printed `<bundle default>` / `<DEFAULT>`, and `DATABRICKS_SERVERLESS_VERSION` never overrode the serverless version: Zed resolves `${VAR:-default}` to the default before the shell sees the project's environment. The tasks use `$(printenv VAR || echo default)` instead.
+- Task banners always printed `<bundle default>` / `<DEFAULT>`, and `DATABRICKS_SERVERLESS_VERSION` never overrode the serverless version: Zed resolves `${VAR:-default}` to the default before the shell sees the project's environment, and WSL projects mangle nested quotes. Bundle tasks now run through a small wrapper, `.zed/databricks/cli.sh`, which prints the target and profile and fills in the serverless version; the task commands themselves stay plain.
 - A `bundle validate` failure without an error the server could parse (for example a crash) showed a clean bundle; it is now reported on `databricks.yml` with the end of the CLI's output.
 - A symbolic link loop inside a bundle could hang validation.
 - Without a Databricks CLI, the extension retried the schema lookup on every configuration request; old generated schema files are now removed.

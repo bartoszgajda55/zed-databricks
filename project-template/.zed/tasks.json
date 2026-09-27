@@ -1,7 +1,7 @@
 [
   {
     "label": "databricks: bundle validate",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks bundle validate",
+    "command": "sh .zed/databricks/cli.sh bundle validate",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -10,7 +10,7 @@
   },
   {
     "label": "databricks: bundle plan",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks bundle plan",
+    "command": "sh .zed/databricks/cli.sh bundle plan",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -19,7 +19,7 @@
   },
   {
     "label": "databricks: bundle deploy",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks bundle deploy",
+    "command": "sh .zed/databricks/cli.sh bundle deploy",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -28,7 +28,7 @@
   },
   {
     "label": "databricks: bundle run (pick resource)",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks bundle run",
+    "command": "sh .zed/databricks/cli.sh bundle run",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -37,7 +37,7 @@
   },
   {
     "label": "databricks: bundle run \"$ZED_SELECTED_TEXT\"",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks bundle run \"$BUNDLE_RESOURCE\"",
+    "command": "sh .zed/databricks/cli.sh bundle run \"$BUNDLE_RESOURCE\"",
     "env": {
       "BUNDLE_RESOURCE": "$ZED_SELECTED_TEXT"
     },
@@ -49,7 +49,7 @@
   },
   {
     "label": "databricks: bundle open (pick resource)",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks bundle open",
+    "command": "sh .zed/databricks/cli.sh bundle open",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -57,7 +57,7 @@
   },
   {
     "label": "databricks: bundle summary",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks bundle summary",
+    "command": "sh .zed/databricks/cli.sh bundle summary",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -66,7 +66,7 @@
   },
   {
     "label": "databricks: bundle destroy (confirmation required)",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks bundle destroy",
+    "command": "sh .zed/databricks/cli.sh bundle destroy",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -76,7 +76,7 @@
   },
   {
     "label": "databricks: pipelines dry-run on Databricks (deployed pipeline)",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks pipelines dry-run",
+    "command": "sh .zed/databricks/cli.sh pipelines dry-run",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -84,7 +84,7 @@
   },
   {
     "label": "databricks: pipelines logs (latest update)",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks pipelines logs",
+    "command": "sh .zed/databricks/cli.sh pipelines logs",
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"
@@ -92,12 +92,12 @@
   },
   {
     "label": "databricks: environments setup-local (bundle target's cluster)",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks environments setup-local",
+    "command": "sh .zed/databricks/cli.sh environments setup-local",
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
     "label": "databricks: environments setup-local (serverless)",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks environments setup-local --serverless-version \"$(printenv DATABRICKS_SERVERLESS_VERSION || echo 5)\"",
+    "command": "sh .zed/databricks/cli.sh environments setup-local --serverless-version",
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
@@ -112,7 +112,7 @@
   },
   {
     "label": "databricks: auth describe",
-    "command": "echo \"▶ bundle target: $(printenv DATABRICKS_BUNDLE_TARGET || echo \"<bundle default>\") | profile: $(printenv DATABRICKS_CONFIG_PROFILE || echo \"<DEFAULT>\")\" && databricks auth describe",
+    "command": "sh .zed/databricks/cli.sh auth describe",
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {

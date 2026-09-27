@@ -168,44 +168,83 @@ def zed_substitute(command):
     return re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}", r"\1", command)
 
 
+CLI_WRAPPER = "sh .zed/databricks/cli.sh "
+
+
+def load_tasks():
+    return {t["label"]: t for t in json.loads((TEMPLATE / "tasks.json").read_text())}
+
+
+def run_task(tmp_path, task, env=None):
+    """Run a task as Zed would (after its substitution), with a fake `databricks` that records args."""
+    project = tmp_path / "project"
+    shutil.copytree(TEMPLATE, project / ".zed", dirs_exist_ok=True)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    fake = bin_dir / "databricks"
+    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$ARGS_FILE"\n')
+    fake.chmod(0o755)
+    args_file = tmp_path / "args"
+    full_env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "ARGS_FILE": str(args_file), **(env or {})}
+    result = subprocess.run(
+        ["sh", "-c", zed_substitute(task["command"])], cwd=project, env=full_env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip(), args_file.read_text().splitlines()
+
+
 def test_tasks_are_valid_and_shell_parsable():
     tasks = json.loads((TEMPLATE / "tasks.json").read_text())
     labels = [t["label"] for t in tasks]
     assert len(labels) == len(set(labels))
     for task in tasks:
-        command = zed_substitute(task["command"])
-        subprocess.run(["sh", "-n", "-c", command], check=True)
+        command = task["command"]
+        subprocess.run(["sh", "-n", "-c", zed_substitute(command)], check=True)
         # Zed pastes variables into the command text before the shell parses it, so editor text
         # must reach the shell through `env` (expanded as data), never inline.
-        assert "ZED_SELECTED_TEXT" not in task["command"], task["label"]
-        # Zed resolves `${VAR:-default}` to the default itself, before the shell sees the
-        # project's environment; use `$(printenv VAR || echo default)` instead.
-        assert not re.search(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-", task["command"]), task["label"]
-        # Remote and WSL projects pass the command through another quoting layer (wsl.exe on
-        # Windows) that breaks on single quotes; double quotes survive it.
-        assert "'" not in task["command"], task["label"]
+        assert "ZED_SELECTED_TEXT" not in command, task["label"]
+        # Zed resolves `${VAR:-default}` to the default itself, and WSL projects add a quoting
+        # layer that mangles single and nested quotes. Keep commands plain; logic goes in cli.sh.
+        assert not re.search(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-", command), task["label"]
+        assert "'" not in command and "$(" not in command, task["label"]
+        if command.startswith("databricks ") and not command.startswith("databricks auth"):
+            raise AssertionError(f"{task['label']}: run bundle commands through {CLI_WRAPPER.strip()}")
+
+
+def test_cli_wrapper_prints_the_active_target_and_profile(tmp_path):
+    task = load_tasks()["databricks: bundle validate"]
+    env = {"DATABRICKS_BUNDLE_TARGET": "staging", "DATABRICKS_CONFIG_PROFILE": "turbines_dev"}
+    out, args = run_task(tmp_path, task, env)
+    assert out == "▶ bundle target: staging | profile: turbines_dev"
+    assert args == ["bundle", "validate"]
+    out, _ = run_task(tmp_path, task)
+    assert out == "▶ bundle target: <bundle default> | profile: <DEFAULT>"
+
+
+def test_serverless_version_defaults_to_5_and_follows_the_environment(tmp_path):
+    task = load_tasks()["databricks: environments setup-local (serverless)"]
+    _, args = run_task(tmp_path, task)
+    assert args == ["environments", "setup-local", "--serverless-version", "5"]
+    _, args = run_task(tmp_path, task, {"DATABRICKS_SERVERLESS_VERSION": "6"})
+    assert args[-1] == "6"
 
 
 def test_selected_text_reaches_the_cli_as_one_literal_argument(tmp_path):
-    task = next(t for t in json.loads((TEMPLATE / "tasks.json").read_text()) if "BUNDLE_RESOURCE" in t.get("env", {}))
+    task = load_tasks()['databricks: bundle run "$ZED_SELECTED_TEXT"']
     assert task["env"]["BUNDLE_RESOURCE"] == "$ZED_SELECTED_TEXT"
-    fake = tmp_path / "databricks"
-    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$(dirname "$0")/args"\n')
-    fake.chmod(0o755)
     hostile = 'job"; touch pwned; echo "'
     # What Zed runs after substituting the selected text into the task's env.
-    env = {**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "BUNDLE_RESOURCE": hostile}
-    subprocess.run(["sh", "-c", task["command"]], cwd=tmp_path, env=env, check=True, capture_output=True)
-    assert (tmp_path / "args").read_text().splitlines() == ["bundle", "run", hostile]
-    assert not (tmp_path / "pwned").exists()
+    _, args = run_task(tmp_path, task, {"BUNDLE_RESOURCE": hostile})
+    assert args == ["bundle", "run", hostile]
+    assert not list(tmp_path.rglob("pwned"))
 
 
 @pytest.mark.skipif(not HAS_CLI, reason="databricks CLI not installed")
 def test_task_commands_exist_in_the_installed_cli():
     """Every `databricks …` command the tasks run is a real CLI command (catches renames)."""
     commands = set()
-    for task in json.loads((TEMPLATE / "tasks.json").read_text()):
-        for match in re.finditer(r"\bdatabricks((?: [a-z][a-z-]*)+)", task["command"]):
+    for task in load_tasks().values():
+        for match in re.finditer(r"(?:\bdatabricks|cli\.sh)((?: [a-z][a-z-]*)+)", task["command"]):
             commands.add(tuple(match.group(1).split()))
     assert ("environments", "setup-local") in commands
     for words in sorted(commands):
@@ -214,33 +253,11 @@ def test_task_commands_exist_in_the_installed_cli():
         assert f"databricks {' '.join(words)}" in result.stdout, (words, result.stdout[:300])
 
 
-def test_task_banner_and_defaults_reflect_the_environment():
-    tasks = {t["label"]: t for t in json.loads((TEMPLATE / "tasks.json").read_text())}
-
-    def run(label, env):
-        banner = zed_substitute(tasks[label]["command"]).split(" && ")[0]
-        result = subprocess.run(
-            ["sh", "-c", banner], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True
-        )
-        return result.stdout.strip()
-
-    set_env = {"DATABRICKS_BUNDLE_TARGET": "staging", "DATABRICKS_CONFIG_PROFILE": "turbines_dev"}
-    assert run("databricks: bundle validate", set_env) == "▶ bundle target: staging | profile: turbines_dev"
-    assert run("databricks: bundle validate", {}) == "▶ bundle target: <bundle default> | profile: <DEFAULT>"
-    serverless = zed_substitute(tasks["databricks: environments setup-local (serverless)"]["command"])
-    version = serverless.split("--serverless-version ")[1]
-    for env, expected in (({"DATABRICKS_SERVERLESS_VERSION": "6"}, "6"), ({}, "5")):
-        out = subprocess.run(
-            ["sh", "-c", f"echo {version}"], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True
-        )
-        assert out.stdout.strip() == expected
-
-
 def test_bundle_tasks_never_auto_approve_and_show_target():
-    for task in json.loads((TEMPLATE / "tasks.json").read_text()):
+    for task in load_tasks().values():
         assert "--auto-approve" not in task["command"]
-        if task["label"].startswith("databricks: bundle"):
-            assert "DATABRICKS_BUNDLE_TARGET" in task["command"]
+        if task["label"].startswith(("databricks: bundle", "databricks: pipelines", "databricks: environments")):
+            assert task["command"].startswith(CLI_WRAPPER), task["label"]
 
 
 def test_settings_template_is_valid_jsonc():
@@ -268,9 +285,8 @@ def test_setup_project_installs_templates_and_is_idempotent(tmp_path):
     assert (tmp_path / "typings/pyspark-stubs/py.typed").read_text() == "partial\n"
     assert (tmp_path / "__builtins__.pyi").exists()
     assert (tmp_path / ".zed/debug.json").exists()
-    assert (tmp_path / ".zed/databricks/connect_runner.py").read_text() == (
-        TEMPLATE / "databricks/connect_runner.py"
-    ).read_text()
+    for helper in ("connect_runner.py", "cli.sh"):
+        assert (tmp_path / ".zed/databricks" / helper).read_text() == (TEMPLATE / "databricks" / helper).read_text()
 
     second = run_setup(tmp_path)
     assert "unchanged .zed/tasks.json" in second.stdout

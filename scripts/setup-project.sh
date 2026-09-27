@@ -30,16 +30,20 @@ install_template tasks.json
 install_template settings.json
 install_template debug.json
 
-# Databricks Connect runner used by debug.json and the databricks-connect task.
-if [ ! -e "$ZED_DIR/databricks/connect_runner.py" ]; then
-    mkdir -p "$ZED_DIR/databricks"
-    cp "$TEMPLATE_DIR/databricks/connect_runner.py" "$ZED_DIR/databricks/connect_runner.py"
-    echo "created   .zed/databricks/connect_runner.py"
-elif cmp -s "$TEMPLATE_DIR/databricks/connect_runner.py" "$ZED_DIR/databricks/connect_runner.py"; then
-    echo "unchanged .zed/databricks/connect_runner.py"
-else
-    echo "exists    .zed/databricks/connect_runner.py (left unchanged)"
-fi
+# Helpers the tasks and debug scenarios run: the Databricks Connect runner and the CLI wrapper.
+mkdir -p "$ZED_DIR/databricks"
+for helper in "$TEMPLATE_DIR"/databricks/*; do
+    [ -f "$helper" ] || continue  # e.g. a __pycache__ left by the tests
+    name="databricks/$(basename "$helper")"
+    if [ ! -e "$ZED_DIR/$name" ]; then
+        cp "$helper" "$ZED_DIR/$name"
+        echo "created   .zed/$name"
+    elif cmp -s "$helper" "$ZED_DIR/$name"; then
+        echo "unchanged .zed/$name"
+    else
+        echo "exists    .zed/$name (left unchanged; compare with $helper)"
+    fi
+done
 
 # Python stubs: basedpyright (Zed's default) reads typings/ and __builtins__.pyi from the project root.
 if [ ! -e "$PROJECT_DIR/typings/pyspark-stubs" ]; then
