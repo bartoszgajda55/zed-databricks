@@ -132,7 +132,8 @@ def bundle_cluster_id(root: Path, target: str | None, profile: str | None) -> st
     if profile:
         command += ["--profile", profile]
     try:
-        result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=120)
+        # A failed validation still prints the resolved configuration, so the exit code is ignored.
+        result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=120, check=False)
         return (json.loads(result.stdout).get("bundle") or {}).get("cluster_id")
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         return None
@@ -176,9 +177,10 @@ def install_globals(session, profile: str | None) -> None:
     """The names Databricks notebooks and jobs get for free."""
     builtins.spark = session  # type: ignore[attr-defined]
 
-    def display(value=None, *args, **kwargs):
-        if hasattr(value, "show") and hasattr(value, "schema"):
-            value.show(truncate=False)
+    def display(value: object = None, *args: object, **kwargs: object) -> None:
+        show = getattr(value, "show", None)
+        if callable(show) and hasattr(value, "schema"):  # a Spark DataFrame
+            show(truncate=False)
         elif value is not None:
             print(value)
 
@@ -187,7 +189,7 @@ def install_globals(session, profile: str | None) -> None:
         from databricks.sdk import WorkspaceClient
 
         builtins.dbutils = WorkspaceClient(profile=profile).dbutils  # type: ignore[attr-defined]
-    except Exception as err:  # dbutils is optional; keep running without it
+    except Exception as err:  # noqa: BLE001 - dbutils is optional; never let it stop the user's script
         print(f"connect_runner: dbutils unavailable ({err})", file=sys.stderr)
 
 

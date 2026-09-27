@@ -16,6 +16,7 @@ All notable changes are listed here. One version covers the extension and `datab
 - Release archives carry build provenance attestations (`gh attestation verify`).
 
 ### Fixed
+- `connect_runner.py` raised warnings in projects using Ruff's default rules and basedpyright (`subprocess.run` without `check`, a broad `except`, `display` possibly calling `.show` on `None`). Templates are now also linted in CI the way users' projects lint them.
 - The debug runner failed with a bare `ModuleNotFoundError` when Zed ran it with a Python lacking `databricks-connect`; it now names that Python and says how to fix it (select the project's `.venv`, or run `environments setup-local`).
 - Task banners always printed `<bundle default>` / `<DEFAULT>`, and `DATABRICKS_SERVERLESS_VERSION` never overrode the serverless version: Zed resolves `${VAR:-default}` to the default before the shell sees the project's environment, and WSL projects mangle nested quotes. Bundle tasks now run through a small wrapper, `.zed/databricks/cli.sh`, which prints the target and profile and fills in the serverless version; the task commands themselves stay plain.
 - A `bundle validate` failure without an error the server could parse (for example a crash) showed a clean bundle; it is now reported on `databricks.yml` with the end of the CLI's output.

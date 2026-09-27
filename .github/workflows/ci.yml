@@ -28,6 +28,8 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
           uv run basedpyright
+          # Templates are linted in users' projects with Ruff's default rules.
+          uv run ruff check --isolated --line-length 120 project-template
       # Snippets, templates, stubs, local Spark integration, the debugger runner and releases.
       - run: uv run pytest
 

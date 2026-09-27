@@ -38,6 +38,9 @@ ignore = ["E501"]  # the formatter owns line length
 [tool.ruff.lint.per-file-ignores]
 # Stubs are copied into user projects, which may run Python < 3.12 (no `type` statement).
 "project-template/typings/**" = ["UP040"]
+# Templates carry `noqa`s for Ruff's default rules, which users' projects run (CI checks
+# them with `ruff check --isolated`) but this configuration doesn't select.
+"project-template/**" = ["RUF100"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["dap_client", "runner_module", "zed_snippet"]

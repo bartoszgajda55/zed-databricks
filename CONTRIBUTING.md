@@ -28,6 +28,7 @@ CI runs all of these; please run them before opening a pull request:
 
 ```sh
 uv run ruff check . && uv run ruff format --check . && uv run basedpyright
+uv run ruff check --isolated --line-length 120 project-template   # as users' projects lint the templates
 uv run pytest
 
 cargo fmt --check && cargo clippy --all-targets -- -D warnings
