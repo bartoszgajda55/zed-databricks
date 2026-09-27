@@ -4,6 +4,9 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ## [Unreleased]
 
+### Fixed
+- Snippets `dab-job`, `dab-cluster` and `dab-pipeline` inserted `${bundle.target-…}` instead of `${bundle.target}-…` in Zed: a reference's closing brace inside a placeholder ended the placeholder. The tests now check references inside placeholders.
+
 ## [0.2.0] - 2026-09-27
 
 First public release.

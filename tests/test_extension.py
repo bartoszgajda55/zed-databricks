@@ -83,6 +83,25 @@ def test_snippet_parses_like_zed(language, snippet):
             continue
         for start, end in ranges:
             assert end > start, f"tabstop ${index} has an empty occurrence"
+            # Inside a placeholder, an unescaped `}` ends it, so a `${bundle.target}` reference
+            # needs `\\}` too; otherwise Zed inserts `${bundle.target-…}`.
+            default = text[start:end]
+            for ref in re.finditer(r"\$\{", default):
+                assert "}" in default[ref.end() :], f"tabstop ${index} cuts a reference short: {default!r}"
+
+
+def test_bundle_references_expand_intact():
+    """What Zed inserts when every default is accepted (checked in Zed for dab-job)."""
+    yaml_snippets = {s["prefix"]: s for s in json.loads((ROOT / "snippets/yaml.json").read_text()).values()}
+    lines = {
+        prefix: [line.strip() for line in expand(yaml_snippets[prefix]).splitlines()]
+        for prefix in ("dab-job", "dab-cluster", "dab-pipeline")
+    }
+    assert "name: ${bundle.target}-my_job" in lines["dab-job"]
+    assert "cluster_name: ${bundle.target}-dev_cluster" in lines["dab-cluster"]
+    assert "name: ${bundle.target}-my_pipeline" in lines["dab-pipeline"]
+    assert "schema: ${bundle.target}_my_pipeline" in lines["dab-pipeline"]
+    assert "- --editable ${workspace.file_path}" in lines["dab-pipeline"]
 
 
 # Where each YAML fragment snippet sits inside a bundle document.
