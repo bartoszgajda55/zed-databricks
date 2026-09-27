@@ -1,6 +1,6 @@
 id = "databricks"
 name = "Databricks"
-version = "0.2.2"
+version = "0.2.3"
 schema_version = 1
 authors = ["Bartosz Gajda <bartek.g55@gmail.com>"]
 description = "Databricks support: bundle completion, validation and snippets."

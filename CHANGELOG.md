@@ -4,6 +4,8 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-27
+
 ### Changed
 - A shorter extension description for Zed's extension gallery: "Databricks support: bundle completion, validation and snippets."
 - README screenshot of the debugger.
