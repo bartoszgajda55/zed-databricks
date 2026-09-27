@@ -20,7 +20,7 @@ You need [uv](https://docs.astral.sh/uv/) and [rustup](https://rustup.rs/). Ever
 scripts/dev-setup.sh   # Python deps, PySpark, a JDK in .venv/jdk, basedpyright, ruff; adds the wasm32-wasip2 target
 ```
 
-To try the extension, run `zed: install dev extension` in Zed and pick the repository. For the diagnostics server, `cargo install --path servers/databricks-bundle-ls` puts your build on `PATH`, which the extension prefers over downloads.
+To try the extension, run `zed: install dev extension` in Zed and pick the repository. The Zed app on your machine compiles dev extensions, even for remote or WSL projects, so Rust must be installed where Zed runs. With Zed on Windows, that means rustup for Windows (with the Visual C++ build tools it offers to install) and a clone on the Windows side; building from a `\\wsl.localhost\...` path is slow. Zed then copies the extension to the remote side, where the language server and the `databricks` CLI run. For the diagnostics server, `cargo install --path servers/databricks-bundle-ls` puts your build on `PATH`, which the extension prefers over downloads.
 
 ## Checks
 
