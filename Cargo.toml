@@ -11,3 +11,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 zed_extension_api = "0.7.0"
+
+# `zed: install dev extension` builds the debug profile. Incremental compilation takes file
+# locks that fail when Zed on Windows builds from a `\\wsl.localhost\...` path, and this crate
+# is small enough not to need it.
+[profile.dev]
+incremental = false

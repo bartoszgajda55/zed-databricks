@@ -6,6 +6,7 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ### Fixed
 - Snippets `dab-job`, `dab-cluster` and `dab-pipeline` inserted `${bundle.target-…}` instead of `${bundle.target}-…` in Zed: a reference's closing brace inside a placeholder ended the placeholder. The tests now check references inside placeholders.
+- `zed: install dev extension` failed when Zed on Windows built the extension from a `\\wsl.localhost\...` path: incremental compilation is now off for debug builds.
 
 ## [0.2.0] - 2026-09-27
 
