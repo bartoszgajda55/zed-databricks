@@ -216,7 +216,9 @@ def test_task_banner_and_defaults_reflect_the_environment():
 
     def run(label, env):
         banner = zed_substitute(tasks[label]["command"]).split(" && ")[0]
-        result = subprocess.run(["sh", "-c", banner], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True)
+        result = subprocess.run(
+            ["sh", "-c", banner], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True
+        )
         return result.stdout.strip()
 
     set_env = {"DATABRICKS_BUNDLE_TARGET": "staging", "DATABRICKS_CONFIG_PROFILE": "turbines_dev"}
@@ -225,7 +227,9 @@ def test_task_banner_and_defaults_reflect_the_environment():
     serverless = zed_substitute(tasks["databricks: environments setup-local (serverless)"]["command"])
     version = serverless.split("--serverless-version ")[1]
     for env, expected in (({"DATABRICKS_SERVERLESS_VERSION": "6"}, "6"), ({}, "5")):
-        out = subprocess.run(["sh", "-c", f"echo {version}"], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True)
+        out = subprocess.run(
+            ["sh", "-c", f"echo {version}"], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True
+        )
         assert out.stdout.strip() == expected
 
 
