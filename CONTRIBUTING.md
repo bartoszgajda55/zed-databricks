@@ -35,7 +35,7 @@ cargo test && cargo build --release --target wasm32-wasip2
 (cd servers/databricks-bundle-ls && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test)
 ```
 
-Tests use a fake `databricks` CLI and a fake Databricks Connect, so they need no workspace. To also debug against real compute, set `DATABRICKS_LIVE_PROFILE=<profile>` and `DATABRICKS_CONNECT_PYTHON=<python>`, an interpreter from a separate venv with `databricks-connect` (it replaces `pyspark`, so it can't share the dev environment).
+Tests use a fake `databricks` CLI and a fake Databricks Connect, so they need no workspace. For `databricks-bundle-ls`, the fake CLI is the `fake-databricks` example, which a plain `cargo test` builds; `cargo test --test e2e` alone does not. CI runs the language server's tests on Linux, macOS and Windows. To also debug against real compute, set `DATABRICKS_LIVE_PROFILE=<profile>` and `DATABRICKS_CONNECT_PYTHON=<python>`, an interpreter from a separate venv with `databricks-connect` (it replaces `pyspark`, so it can't share the dev environment).
 
 ## Conventions
 

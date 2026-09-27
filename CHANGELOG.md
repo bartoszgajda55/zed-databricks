@@ -4,6 +4,21 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ## [Unreleased]
 
+### Changed
+- The extension downloads the `databricks-bundle-ls` release matching its own version instead of the latest one, and checks for a cached copy before going online. With no network (or when GitHub's API rate limit is hit), it falls back to the newest cached copy.
+- `databricks-bundle-ls` settings can all go under `lsp.databricks-bundle-ls.settings`; configuration changes are merged over the initialization options instead of replacing them, and invalid settings are reported in the language server log instead of being silently ignored.
+- New setting `validateOnOpen` (default `true`); set it to `false` to validate only on save.
+- Release archives carry build provenance attestations (`gh attestation verify`).
+
+### Fixed
+- A `bundle validate` failure without an error the server could parse (for example a crash) showed a clean bundle; it is now reported on `databricks.yml` with the end of the CLI's output.
+- A symbolic link loop inside a bundle could hang validation.
+- Without a Databricks CLI, the extension retried the schema lookup on every configuration request; old generated schema files are now removed.
+- The `bundle run` task passed the selected text to the shell inline, so text containing quotes could run other commands; it is now passed as a single argument.
+
+### Security
+- Documented what runs automatically (validation can execute project code in Python-defined bundles) and Zed's worktree trust boundary, in README and SECURITY.md.
+
 ## [0.2.1] - 2026-09-27
 
 ### Fixed

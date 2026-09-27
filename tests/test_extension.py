@@ -4,6 +4,7 @@ Run with:  uv run pytest   # after scripts/dev-setup.sh
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -171,6 +172,23 @@ def test_tasks_are_valid_and_shell_parsable():
     for task in tasks:
         command = zed_substitute(task["command"])
         subprocess.run(["sh", "-n", "-c", command], check=True)
+        # Zed pastes variables into the command text before the shell parses it, so editor text
+        # must reach the shell through `env` (expanded as data), never inline.
+        assert "ZED_SELECTED_TEXT" not in task["command"], task["label"]
+
+
+def test_selected_text_reaches_the_cli_as_one_literal_argument(tmp_path):
+    task = next(t for t in json.loads((TEMPLATE / "tasks.json").read_text()) if "BUNDLE_RESOURCE" in t.get("env", {}))
+    assert task["env"]["BUNDLE_RESOURCE"] == "$ZED_SELECTED_TEXT"
+    fake = tmp_path / "databricks"
+    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$(dirname "$0")/args"\n')
+    fake.chmod(0o755)
+    hostile = 'job"; touch pwned; echo "'
+    # What Zed runs after substituting the selected text into the task's env.
+    env = {**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "BUNDLE_RESOURCE": hostile}
+    subprocess.run(["sh", "-c", task["command"]], cwd=tmp_path, env=env, check=True, capture_output=True)
+    assert (tmp_path / "args").read_text().splitlines() == ["bundle", "run", hostile]
+    assert not (tmp_path / "pwned").exists()
 
 
 def test_bundle_tasks_never_auto_approve_and_show_target():

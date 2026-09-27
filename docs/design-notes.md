@@ -18,6 +18,15 @@ yaml-language-server prefixes every glob with `**/` and matches it against the w
 ### A language server can't decline to start
 When `language_server_command` returns an error, Zed shows "Failed to run …" in the status bar. `databricks-bundle-ls` is therefore always started for YAML, and does nothing for files outside a bundle: no CLI calls and no diagnostics. Users who want it off in a project list `"!databricks-bundle-ls"` in `languages.YAML.language_servers`.
 
+### Worktree trust is the security boundary
+Validation runs the Databricks CLI, which executes project Python for bundles that define resources in Python (the CLI's initialize phase), and a project's settings can change which binary runs. Zed opens new worktrees in Restricted Mode: it neither starts language servers nor applies `.zed/settings.json` until the user trusts the worktree (https://zed.dev/docs/worktree-trust). So nothing runs for an untrusted clone, and `validateOnOpen: false` limits validation to explicit saves in trusted ones.
+
+### Where the language server binary comes from
+The user's binary (`binary.path` setting, then `PATH`) wins. Otherwise the extension uses the release whose tag matches its own version: the two are released together from one tag, and registry updates lag GitHub releases by weeks, so "latest" would ship servers to extension versions they weren't tested with. The pinned copy is looked up on disk before any network call, and if downloading fails (offline, or GitHub's 60 requests/hour unauthenticated API limit) the newest cached copy is used.
+
+### Settings arrive twice
+Zed passes `lsp.<server>.initialization_options` at startup and `lsp.<server>.settings` through `workspace/didChangeConfiguration`, which it also sends when nothing changed (with `null` or `{}`). The server merges configuration changes over the initialization options, so they don't drop values the extension injects there (the resolved `databricksPath`).
+
 ### Snippets
 Zed supports placeholders, nested placeholders, choices (`${1|a,b|}`) and `\$` escapes. It does not support transforms (`${1/regex/…/}`), and it doesn't copy a placeholder's default into bare mirrors (`$1`), so mirrors repeat the default.
 
@@ -73,4 +82,6 @@ The project doesn't ship an MCP server. Databricks' official route for coding ag
 
 - `astral-sh/setup-uv` publishes no floating major tag (`@v10` fails), so it's pinned to a full version.
 - `huacnlee/zed-extension-action` only updates an extension already listed in `zed-industries/extensions`; the first submission is a manual pull request from a public repository.
-- The extension downloads only full (non-pre-release) GitHub releases of `databricks-bundle-ls`.
+- Each extension version downloads the `databricks-bundle-ls` release with its own tag, so a pre-release extension build uses the matching pre-release.
+- Actions are pinned to commit SHAs, with Dependabot keeping them current; CI's token is read-only, and the registry job gets no `GITHUB_TOKEN` permissions. Release archives get build provenance attestations.
+- The registry action needs a classic token: it pushes to the fork and opens a cross-repository pull request. `public_repo` and `workflow` are the only scopes it needs.

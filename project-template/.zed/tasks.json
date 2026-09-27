@@ -37,7 +37,10 @@
   },
   {
     "label": "databricks: bundle run \"$ZED_SELECTED_TEXT\"",
-    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle run \"$ZED_SELECTED_TEXT\"",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle run \"$BUNDLE_RESOURCE\"",
+    "env": {
+      "BUNDLE_RESOURCE": "$ZED_SELECTED_TEXT"
+    },
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": [
       "databricks-bundle"

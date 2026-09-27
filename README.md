@@ -27,9 +27,10 @@ Prerequisite: the [Databricks CLI](https://docs.databricks.com/dev-tools/cli/ins
 1. **Extension.** In Zed, open `zed: extensions`, search for **Databricks** and install it. The extension downloads its diagnostics server, `databricks-bundle-ls`, from this repository's GitHub releases on first use.
    - To use your own build of the server instead, put it on `PATH` (`cargo install --path servers/databricks-bundle-ls`) or set `lsp.databricks-bundle-ls.binary.path`.
    - To install from source, clone this repository, run `zed: install dev extension` and pick the directory. Zed compiles the extension itself, which needs `rustup`.
-2. **Per project (optional).** Copy the tasks, debug scenarios, settings and Python stubs into a project:
+2. **Per project (optional).** Copy the tasks, debug scenarios, settings and Python stubs into a project. This needs a clone of this repository and a POSIX shell (macOS, Linux, or WSL / Git Bash on Windows):
    ```sh
-   scripts/setup-project.sh /path/to/your/project
+   git clone https://github.com/bartoszgajda55/zed-databricks.git
+   zed-databricks/scripts/setup-project.sh /path/to/your/project
    ```
    The script never overwrites existing files. When a file already exists, it writes the template alongside it (for example `databricks.tasks.json`) for you to merge by hand.
 
@@ -43,7 +44,7 @@ Everything reads the same two variables, so set them once in the project's `.zed
 "terminal": { "env": { "DATABRICKS_BUNDLE_TARGET": "staging", "DATABRICKS_CONFIG_PROFILE": "staging" } }
 ```
 
-The tasks and terminals use them through the environment. `databricks-bundle-ls` reads the same file, and each diagnostic's source shows the target, for example `databricks bundle validate (target: staging)`. If you leave them unset, the CLI uses the target marked `default: true` and the `DEFAULT` profile. `lsp.databricks-bundle-ls.initialization_options` (`target`, `profile`, `strict`, `databricksPath`, `timeoutSeconds`) overrides both for diagnostics only.
+The tasks and terminals use them through the environment. `databricks-bundle-ls` reads the same file, and each diagnostic's source shows the target, for example `databricks bundle validate (target: staging)`. If you leave them unset, the CLI uses the target marked `default: true` and the `DEFAULT` profile. To use a different target or profile for diagnostics only, set `target` / `profile` in the language server's settings (see [Diagnostics](#diagnostics)).
 
 ### Schema
 
@@ -59,11 +60,29 @@ An empty list turns the schema off. If you map a Databricks schema yourself in `
 
 ### Diagnostics
 
-`databricks-bundle-ls` starts with YAML files. Inside a bundle (any directory tree with `databricks.yml`) it runs `databricks bundle validate` on open and save; elsewhere it stays idle. To turn it off for a project:
+`databricks-bundle-ls` starts with YAML files. Inside a bundle (any directory tree with `databricks.yml`) it runs `databricks bundle validate` when a bundle file is first opened and on every save; elsewhere it stays idle. If the CLI fails without an error it can place, for example when it crashes, the failure is shown on `databricks.yml` rather than hidden. To turn the server off for a project:
 
 ```jsonc
 "languages": { "YAML": { "language_servers": ["!databricks-bundle-ls", "..."] } }
 ```
+
+Settings go under `lsp.databricks-bundle-ls.settings` (`initialization_options` is also read, with `settings` taking precedence). Invalid values are reported in the language server log and the previous settings are kept.
+
+```jsonc
+"lsp": { "databricks-bundle-ls": { "settings": { "target": "dev", "validateOnOpen": false } } }
+```
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `target` | `DATABRICKS_BUNDLE_TARGET`, then `terminal.env` | Bundle target to validate |
+| `profile` | `DATABRICKS_CONFIG_PROFILE`, then `terminal.env` | CLI profile |
+| `databricksPath` | `databricks` on `PATH` | CLI to run |
+| `strict` | `false` | Pass `--strict`, so warnings fail validation |
+| `timeoutSeconds` | `120` | Stop a validation that takes longer |
+| `validateOnOpen` | `true` | `false` validates on save only |
+| `bundleRoots` | the worktree root, if it has `databricks.yml` | Bundles whose files get the schema (see [Schema](#schema)) |
+
+**What runs automatically.** Validation runs the Databricks CLI in the bundle, and bundles that define resources in Python run that project code too. Zed only starts language servers and applies a project's `.zed/settings.json` once you [trust the project](https://zed.dev/docs/worktree-trust), so this doesn't happen for a freshly cloned, untrusted repository. Set `validateOnOpen` to `false` to validate only when you save.
 
 ### Tasks
 
