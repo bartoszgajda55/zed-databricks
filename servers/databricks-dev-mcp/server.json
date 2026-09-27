@@ -39,6 +39,11 @@
           "name": "DATABRICKS_CLI_PATH",
           "description": "Path to the databricks CLI (default: databricks on PATH)",
           "isRequired": false
+        },
+        {
+          "name": "DATABRICKS_DEV_MCP_ALLOW_AGENT_CONFIRM",
+          "description": "Set to 1 to allow cluster start/stop with confirm=true in clients without elicitation support",
+          "isRequired": false
         }
       ]
     }

@@ -47,6 +47,6 @@ if command -v cargo >/dev/null 2>&1 || [ -x "$HOME/.cargo/bin/cargo" ]; then
     rustup target list --installed | grep -q wasm32-wasip2 || rustup target add wasm32-wasip2
     rustc --version
 else
-    echo "note: Rust is not installed; it's needed for the v1 language/MCP servers." >&2
+    echo "note: Rust is not installed; it's needed for the extension and databricks-bundle-ls." >&2
     echo "      Install: curl https://sh.rustup.rs -sSf | sh -s -- -y --target wasm32-wasip2" >&2
 fi

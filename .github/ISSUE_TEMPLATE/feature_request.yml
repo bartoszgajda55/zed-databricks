@@ -1,0 +1,14 @@
+name: Feature request
+description: A snippet, task, tool or editor feature you'd like
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help?

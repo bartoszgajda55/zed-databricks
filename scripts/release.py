@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Keep one version across the repository's manifests, and prepare releases.
 
-    scripts/release.py check [--tag vX.Y.Z]   # all manifests agree (and match the tag)
-    scripts/release.py bump X.Y.Z             # rewrite every manifest + lockfiles, then commit and tag
+    scripts/release.py check [--tag vX.Y.Z]   # all manifests agree (and match the tag + changelog)
+    scripts/release.py bump X.Y.Z             # rewrite every manifest, lockfiles and the changelog, then commit and tag
+    scripts/release.py notes X.Y.Z            # print the version's changelog entry (GitHub release notes)
 
 The extension, databricks-bundle-ls and the databricks-dev MCP server are released together
 from one `vX.Y.Z` tag (see .github/workflows/release.yml).
@@ -16,6 +17,7 @@ import re
 import subprocess
 import sys
 import tomllib
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +30,38 @@ TOML_MANIFESTS = {
     "servers/databricks-dev-mcp/pyproject.toml": ("project", "version"),
 }
 SERVER_JSON = "servers/databricks-dev-mcp/server.json"
+CHANGELOG = ROOT / "CHANGELOG.md"
+UNRELEASED = "Unreleased"
+
+
+def is_prerelease(version: str) -> bool:
+    return "-" in version
+
+
+def changelog_section(text: str, name: str) -> str | None:
+    """Body of the `## [name]` entry, up to the next entry."""
+    match = re.search(rf"^## \[{re.escape(name)}\][^\n]*\n(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
+    return match.group(1).strip() if match else None
+
+
+def release_changelog(text: str, version: str, day: date) -> str:
+    """Move the Unreleased entries under a new `## [version] - day` heading."""
+    if not changelog_section(text, UNRELEASED):
+        raise SystemExit(f"error: {CHANGELOG.name} has nothing under ## [{UNRELEASED}]")
+    if changelog_section(text, version) is not None:
+        raise SystemExit(f"error: {CHANGELOG.name} already has an entry for {version}")
+    return text.replace(f"## [{UNRELEASED}]", f"## [{UNRELEASED}]\n\n## [{version}] - {day.isoformat()}", 1)
+
+
+def release_notes(version: str) -> str:
+    """The version's changelog entry; pre-releases use the Unreleased entries."""
+    text = CHANGELOG.read_text()
+    notes = changelog_section(text, version)
+    if notes is None and is_prerelease(version):
+        notes = changelog_section(text, UNRELEASED)
+    if not notes:
+        raise SystemExit(f"error: {CHANGELOG.name} has no entry for {version}")
+    return notes + "\n"
 
 
 def versions() -> dict[str, str]:
@@ -55,6 +89,11 @@ def check(tag: str | None) -> int:
     version = distinct.pop()
     if tag is not None and tag.removeprefix("refs/tags/") != f"v{version}":
         print(f"error: tag {tag} does not match manifest version v{version}", file=sys.stderr)
+        return 1
+    if tag is not None and not is_prerelease(version) and changelog_section(CHANGELOG.read_text(), version) is None:
+        print(
+            f"error: {CHANGELOG.name} has no entry for {version}; release with scripts/release.py bump", file=sys.stderr
+        )
         return 1
     return 0
 
@@ -85,10 +124,14 @@ def bump(version: str, commit: bool) -> int:
     for package in server["packages"]:
         package["version"] = version
     server_path.write_text(json.dumps(server, indent=2) + "\n")
+    if not is_prerelease(version):
+        CHANGELOG.write_text(release_changelog(CHANGELOG.read_text(), version, date.today()))
 
     # Lockfiles record workspace members' versions.
     subprocess.run(["cargo", "update", "--workspace", "--offline"], cwd=ROOT, check=True)
-    subprocess.run(["cargo", "update", "--workspace", "--offline"], cwd=ROOT / "servers/databricks-bundle-ls", check=True)
+    subprocess.run(
+        ["cargo", "update", "--workspace", "--offline"], cwd=ROOT / "servers/databricks-bundle-ls", check=True
+    )
     subprocess.run(["uv", "lock", "--offline"], cwd=ROOT, check=True)
     if check(None):
         return 1
@@ -107,9 +150,14 @@ def main() -> int:
     bump_cmd = commands.add_parser("bump", help="set the version everywhere, then commit and tag")
     bump_cmd.add_argument("version")
     bump_cmd.add_argument("--no-commit", action="store_true", help="only rewrite the files")
+    notes_cmd = commands.add_parser("notes", help="print a version's changelog entry")
+    notes_cmd.add_argument("version")
     args = parser.parse_args()
     if args.command == "check":
         return check(args.tag)
+    if args.command == "notes":
+        sys.stdout.write(release_notes(args.version))
+        return 0
     return bump(args.version, commit=not args.no_commit)
 
 

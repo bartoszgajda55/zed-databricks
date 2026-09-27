@@ -66,7 +66,10 @@ impl Client {
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            let message = self.messages.recv_timeout(remaining).expect("timed out waiting for message");
+            let message = self
+                .messages
+                .recv_timeout(remaining)
+                .expect("timed out waiting for message");
             if predicate(&message) {
                 return message;
             }
@@ -80,9 +83,11 @@ impl Client {
     }
 
     fn open(&mut self, file: &Path) {
-        self.send(json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
+        self.send(
+            json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
             "uri": format!("file://{}", file.display()), "languageId": "yaml", "version": 1,
-            "text": std::fs::read_to_string(file).unwrap()}}}));
+            "text": std::fs::read_to_string(file).unwrap()}}}),
+        );
     }
 
     fn save(&mut self, file: &Path) {
@@ -158,11 +163,7 @@ fn publishes_and_clears_diagnostics_with_the_selected_target() {
     );
 
     // Fix the file; the fake CLI now reports nothing, so the save must clear the diagnostic.
-    std::fs::write(
-        &cli,
-        "#!/bin/sh\necho 'Name: demo' >&2\necho 'Validation OK!' >&2\n",
-    )
-    .unwrap();
+    std::fs::write(&cli, "#!/bin/sh\necho 'Name: demo' >&2\necho 'Validation OK!' >&2\n").unwrap();
     client.save(&job);
     assert!(client.diagnostics_for(&job).is_empty());
     client.shutdown();
@@ -188,7 +189,10 @@ fn real_cli_reports_schema_warnings_with_locations() {
     let dir = tempfile::tempdir().unwrap();
     bundle(dir.path());
     // Unresolvable host: the CLI still reports config diagnostics, then fails authentication.
-    let mut client = Client::start(&[("DATABRICKS_TOKEN", "dummy"), ("DATABRICKS_CONFIG_FILE", "/dev/null")], json!({}));
+    let mut client = Client::start(
+        &[("DATABRICKS_TOKEN", "dummy"), ("DATABRICKS_CONFIG_FILE", "/dev/null")],
+        json!({}),
+    );
     let job = dir.path().join("resources/job.yml");
     client.open(&job);
     let diagnostics = client.diagnostics_for(&job);

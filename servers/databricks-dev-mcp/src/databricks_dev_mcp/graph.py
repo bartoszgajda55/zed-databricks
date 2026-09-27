@@ -56,8 +56,8 @@ def _task_order(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ordered: list[dict[str, Any]] = []
     state: dict[str, int] = {}
 
-    def visit(key: str) -> None:
-        if state.get(key) == 2 or key not in by_key:
+    def visit(key: str | None) -> None:
+        if key is None or state.get(key) == 2 or key not in by_key:
             return
         if state.get(key) == 1:
             return  # cycle: the CLI reports it; keep going
@@ -108,7 +108,9 @@ def explain(config: dict[str, Any]) -> str:
             )
         if trigger := job.get("trigger"):
             kinds = ", ".join(k for k in trigger if k != "pause_status")
-            lines.append(f"  trigger: {kinds}" + (f" [{trigger['pause_status']}]" if trigger.get("pause_status") else ""))
+            lines.append(
+                f"  trigger: {kinds}" + (f" [{trigger['pause_status']}]" if trigger.get("pause_status") else "")
+            )
         if job.get("continuous"):
             lines.append("  continuous")
         for cluster in job.get("job_clusters") or []:
@@ -153,7 +155,9 @@ def explain(config: dict[str, Any]) -> str:
                 value = spec.get("include") or spec.get("path") if isinstance(spec, dict) else spec
                 lines.append(f"  source ({kind}): {_short_path(str(value), file_root)}")
 
-    other = {kind: sorted(items) for kind, items in sorted(resources.items()) if kind not in ("jobs", "pipelines") and items}
+    other = {
+        kind: sorted(items) for kind, items in sorted(resources.items()) if kind not in ("jobs", "pipelines") and items
+    }
     if other:
         lines.append("")
         lines.append("Other resources:")

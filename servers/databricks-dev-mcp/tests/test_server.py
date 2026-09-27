@@ -10,7 +10,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from mcp.client.client import Client, StdioServerParameters
+from mcp.client.client import Client
+from mcp.client.stdio import StdioServerParameters
 
 from databricks_dev_mcp import graph
 
@@ -65,10 +66,18 @@ def test_explain_orders_tasks_and_links_pipeline():
 
 
 def test_explain_handles_cycles_and_empty_bundles():
-    cyclic = {"resources": {"jobs": {"j": {"tasks": [
-        {"task_key": "a", "depends_on": [{"task_key": "b"}], "notebook_task": {"notebook_path": "x"}},
-        {"task_key": "b", "depends_on": [{"task_key": "a"}], "notebook_task": {"notebook_path": "y"}},
-    ]}}}}
+    cyclic = {
+        "resources": {
+            "jobs": {
+                "j": {
+                    "tasks": [
+                        {"task_key": "a", "depends_on": [{"task_key": "b"}], "notebook_task": {"notebook_path": "x"}},
+                        {"task_key": "b", "depends_on": [{"task_key": "a"}], "notebook_task": {"notebook_path": "y"}},
+                    ]
+                }
+            }
+        }
+    }
     assert graph.explain(cyclic).count("notebook") == 2
     assert "No resources defined" in graph.explain({"bundle": {"name": "x"}})
 
@@ -80,9 +89,17 @@ async def test_lists_tools_with_safety_annotations(fake_cli):
     env, _ = fake_cli
     async with client(env) as c:
         tools = {t.name: t for t in (await c.list_tools()).tools}
-    assert {"bundle_validate", "bundle_deploy", "bundle_run", "explain_bundle_graph", "uc_lookup", "secret_scopes_list"} <= set(tools)
-    assert tools["bundle_validate"].annotations.read_only_hint is True
-    assert tools["bundle_deploy"].annotations.destructive_hint is True
+    assert {
+        "bundle_validate",
+        "bundle_deploy",
+        "bundle_run",
+        "explain_bundle_graph",
+        "uc_lookup",
+        "secret_scopes_list",
+    } <= set(tools)
+    validate, deploy = tools["bundle_validate"].annotations, tools["bundle_deploy"].annotations
+    assert validate is not None and validate.read_only_hint is True
+    assert deploy is not None and deploy.destructive_hint is True
     assert "target" in tools["bundle_deploy"].input_schema["required"]
 
 
@@ -114,7 +131,9 @@ async def test_run_does_not_wait_by_default(fake_cli):
     env, calls = fake_cli
     async with client(env) as c:
         await c.call_tool("bundle_run", {"resource": "daily_job", "target": "dev"})
-        await c.call_tool("bundle_run", {"resource": "daily_job", "target": "dev", "wait": True, "variables": {"catalog": "c1"}})
+        await c.call_tool(
+            "bundle_run", {"resource": "daily_job", "target": "dev", "wait": True, "variables": {"catalog": "c1"}}
+        )
     runs = [call for call in calls() if call[:2] == ["bundle", "run"]]
     assert runs == [
         ["bundle", "run", "daily_job", "--no-wait", "--target", "dev"],
@@ -217,7 +236,9 @@ def elicitation(answer: bool | None, seen: list):
 
 
 def power_calls(calls):
-    return [c for c in calls() if c[:2] in (["clusters", "start"], ["clusters", "delete"], ["clusters", "permanent-delete"])]
+    return [
+        c for c in calls() if c[:2] in (["clusters", "start"], ["clusters", "delete"], ["clusters", "permanent-delete"])
+    ]
 
 
 # "auto" negotiates the 2026-07-28 protocol (elicitation via an input-required round trip);
@@ -251,8 +272,18 @@ async def test_cluster_stop_without_user_consent_changes_nothing(fake_cli, answe
 
 
 @PROTOCOLS
-async def test_without_elicitation_a_preview_is_returned_until_confirmed(fake_cli, mode):
+async def test_without_elicitation_start_and_stop_are_disabled_by_default(fake_cli, mode):
     env, calls = fake_cli
+    async with Client(StdioServerParameters(command=str(SERVER), env=env), mode=mode) as c:
+        result = await c.call_tool("cluster_stop", {"cluster_id": "c-run", "confirm": True})
+    assert result.is_error and "DATABRICKS_DEV_MCP_ALLOW_AGENT_CONFIRM=1" in text(result)
+    assert power_calls(calls) == []
+
+
+@PROTOCOLS
+async def test_agent_confirmation_when_allowed_returns_a_preview_first(fake_cli, mode):
+    env, calls = fake_cli
+    env = {**env, "DATABRICKS_DEV_MCP_ALLOW_AGENT_CONFIRM": "1"}
     async with Client(StdioServerParameters(command=str(SERVER), env=env), mode=mode) as c:
         preview = await c.call_tool("cluster_stop", {"cluster_id": "c-run"})
         assert preview.is_error

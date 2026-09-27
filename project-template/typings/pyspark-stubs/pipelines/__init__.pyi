@@ -5,14 +5,15 @@
 # extra dataset options. This is a partial stub package (see py.typed): other `pyspark`
 # modules still resolve to the installed package.
 
-from typing import Callable, Literal, TypeVar, overload
+from collections.abc import Callable
+from typing import Literal, TypeAlias, TypeVar, overload
 
 from pyspark.sql import Column, DataFrame
 from pyspark.sql.types import StructType
 
-QueryFunction = Callable[[], DataFrame]
+QueryFunction: TypeAlias = Callable[[], DataFrame]
 _F = TypeVar("_F", bound=Callable[..., object])
-_ColumnList = list[str] | list[Column]
+_ColumnList: TypeAlias = list[str] | list[Column]
 
 # --- datasets ---------------------------------------------------------------------------
 

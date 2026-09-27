@@ -20,6 +20,9 @@ class DapClient:
             stderr=subprocess.DEVNULL,
             env=env,
         )
+        assert self.process.stdin is not None and self.process.stdout is not None
+        self.stdin, self.stdout = self.process.stdin, self.process.stdout
+        self.thread_id: int | None = None  # set by debug_until_breakpoint
         self.seq = itertools.count(1)
         self.messages: queue.Queue[dict[str, Any]] = queue.Queue()
         self.backlog: list[dict[str, Any]] = []
@@ -27,7 +30,7 @@ class DapClient:
         threading.Thread(target=self._read, daemon=True).start()
 
     def _read(self) -> None:
-        stream = self.process.stdout
+        stream = self.stdout
         while True:
             length = None
             while True:
@@ -39,6 +42,8 @@ class DapClient:
                     break
                 if line.lower().startswith(b"content-length:"):
                     length = int(line.split(b":")[1])
+            if length is None:
+                raise RuntimeError(f"DAP message without Content-Length: {line!r}")
             message = json.loads(stream.read(length))
             if message.get("event") == "output":
                 self.output.append(message["body"].get("output", ""))
@@ -47,8 +52,8 @@ class DapClient:
     def send(self, command: str, arguments: dict[str, Any] | None = None) -> int:
         seq = next(self.seq)
         body = json.dumps({"seq": seq, "type": "request", "command": command, "arguments": arguments or {}}).encode()
-        self.process.stdin.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
-        self.process.stdin.flush()
+        self.stdin.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+        self.stdin.flush()
         return seq
 
     def wait(self, predicate, timeout: float = 60) -> dict[str, Any]:
@@ -81,9 +86,20 @@ class DapClient:
         self.process.wait()
 
 
-def debug_until_breakpoint(client: DapClient, launch: dict[str, Any], file: str, line: int, timeout: float = 120) -> int:
+def debug_until_breakpoint(
+    client: DapClient, launch: dict[str, Any], file: str, line: int, timeout: float = 120
+) -> int:
     """Launch, stop at `file:line`, and return the top frame id."""
-    client.request("initialize", {"adapterID": "debugpy", "clientID": "zed", "pathFormat": "path", "linesStartAt1": True, "columnsStartAt1": True})
+    client.request(
+        "initialize",
+        {
+            "adapterID": "debugpy",
+            "clientID": "zed",
+            "pathFormat": "path",
+            "linesStartAt1": True,
+            "columnsStartAt1": True,
+        },
+    )
     launch_seq = client.send("launch", launch)
     client.event("initialized", timeout)
     breakpoints = client.request("setBreakpoints", {"source": {"path": file}, "breakpoints": [{"line": line}]})
@@ -93,9 +109,11 @@ def debug_until_breakpoint(client: DapClient, launch: dict[str, Any], file: str,
     stopped = client.event("stopped", timeout)
     frames = client.request("stackTrace", {"threadId": stopped["body"]["threadId"]})["body"]["stackFrames"]
     assert frames[0]["source"]["path"] == file and frames[0]["line"] == line, frames[0]
-    client.thread_id = stopped["body"]["threadId"]  # type: ignore[attr-defined]
+    client.thread_id = stopped["body"]["threadId"]
     return frames[0]["id"]
 
 
 def evaluate(client: DapClient, frame_id: int, expression: str, timeout: float = 120) -> str:
-    return client.request("evaluate", {"expression": expression, "frameId": frame_id, "context": "repl"}, timeout)["body"]["result"]
+    return client.request("evaluate", {"expression": expression, "frameId": frame_id, "context": "repl"}, timeout)[
+        "body"
+    ]["result"]

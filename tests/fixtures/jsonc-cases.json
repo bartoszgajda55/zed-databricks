@@ -1,0 +1,65 @@
+[
+  {
+    "name": "line and block comments",
+    "input": "// top\n{\n  \"a\": 1, /* inline */\n  // \"b\": 2,\n  \"c\": 3\n}\n",
+    "expected": {
+      "a": 1,
+      "c": 3
+    }
+  },
+  {
+    "name": "trailing commas",
+    "input": "{\"a\": [1, 2,], \"b\": {\"c\": 1,},}",
+    "expected": {
+      "a": [
+        1,
+        2
+      ],
+      "b": {
+        "c": 1
+      }
+    }
+  },
+  {
+    "name": "comment markers inside strings",
+    "input": "{\"url\": \"http://x/*y*/\", \"s\": \"// not a comment\"}",
+    "expected": {
+      "url": "http://x/*y*/",
+      "s": "// not a comment"
+    }
+  },
+  {
+    "name": "trailing-comma lookalikes inside strings",
+    "input": "{\"a\": \",}\", \"b\": \", ]\",}",
+    "expected": {
+      "a": ",}",
+      "b": ", ]"
+    }
+  },
+  {
+    "name": "escaped quotes",
+    "input": "{\"a\": \"say \\\"hi\\\" // there\", /* c */ \"b\": \"\\\\\",}",
+    "expected": {
+      "a": "say \"hi\" // there",
+      "b": "\\"
+    }
+  },
+  {
+    "name": "multi-line block comment and unicode",
+    "input": "{\n  /* first\n     second */\n  \"ł\": \"żółw\" // tail\n}",
+    "expected": {
+      "ł": "żółw"
+    }
+  },
+  {
+    "name": "zed terminal env",
+    "input": "{\n  \"terminal\": {\n    \"env\": {\n      // \"DATABRICKS_BUNDLE_TARGET\": \"dev\",\n      \"DATABRICKS_CONFIG_PROFILE\": \"p\",\n    },\n  },\n}\n",
+    "expected": {
+      "terminal": {
+        "env": {
+          "DATABRICKS_CONFIG_PROFILE": "p"
+        }
+      }
+    }
+  }
+]

@@ -15,8 +15,7 @@ use std::time::Duration;
 
 use lsp_server::{Connection, Message, Notification, Response};
 use lsp_types::notification::{
-    DidChangeConfiguration, DidOpenTextDocument, DidSaveTextDocument, LogMessage, Notification as _,
-    PublishDiagnostics,
+    DidChangeConfiguration, DidOpenTextDocument, DidSaveTextDocument, LogMessage, Notification as _, PublishDiagnostics,
 };
 use lsp_types::{
     Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, InitializeParams, Location, LogMessageParams,
@@ -56,7 +55,14 @@ fn main() -> Result<(), Error> {
     let worker = {
         let sender = connection.sender.clone();
         let settings = Arc::clone(&settings);
-        std::thread::spawn(move || Worker { sender, settings, published: HashMap::new() }.run(jobs))
+        std::thread::spawn(move || {
+            Worker {
+                sender,
+                settings,
+                published: HashMap::new(),
+            }
+            .run(jobs)
+        })
     };
 
     let mut known_roots = HashSet::new();
@@ -126,7 +132,9 @@ fn handle_notification(
     };
 
     let Ok(path) = uri.to_file_path() else { return };
-    let Some(root) = validate::find_bundle_root(&path) else { return };
+    let Some(root) = validate::find_bundle_root(&path) else {
+        return;
+    };
     // Opening a file validates its bundle once; saves always revalidate.
     if known_roots.insert(root.clone()) || is_save {
         let _ = queue.send(root);
@@ -180,7 +188,9 @@ impl Worker {
                     message,
                     ..Default::default()
                 };
-                Url::from_file_path(file).map(|uri| HashMap::from([(uri, vec![diagnostic])])).unwrap_or_default()
+                Url::from_file_path(file)
+                    .map(|uri| HashMap::from([(uri, vec![diagnostic])]))
+                    .unwrap_or_default()
             }
         };
 
@@ -188,20 +198,34 @@ impl Worker {
         for stale in previous.iter().filter(|uri| !by_file.contains_key(uri)) {
             self.publish(stale.clone(), Vec::new());
         }
-        self.published.insert(root.to_path_buf(), by_file.keys().cloned().collect());
+        self.published
+            .insert(root.to_path_buf(), by_file.keys().cloned().collect());
         for (uri, diagnostics) in by_file {
             self.publish(uri, diagnostics);
         }
     }
 
     fn publish(&self, uri: Url, diagnostics: Vec<Diagnostic>) {
-        let params = PublishDiagnosticsParams { uri, diagnostics, version: None };
-        let _ = self.sender.send(Message::Notification(Notification::new(PublishDiagnostics::METHOD.into(), params)));
+        let params = PublishDiagnosticsParams {
+            uri,
+            diagnostics,
+            version: None,
+        };
+        let _ = self.sender.send(Message::Notification(Notification::new(
+            PublishDiagnostics::METHOD.into(),
+            params,
+        )));
     }
 
     fn log(&self, message: String) {
-        let params = LogMessageParams { typ: MessageType::INFO, message };
-        let _ = self.sender.send(Message::Notification(Notification::new(LogMessage::METHOD.into(), params)));
+        let params = LogMessageParams {
+            typ: MessageType::INFO,
+            message,
+        };
+        let _ = self.sender.send(Message::Notification(Notification::new(
+            LogMessage::METHOD.into(),
+            params,
+        )));
     }
 }
 
@@ -240,14 +264,19 @@ fn to_lsp(root: &Path, diagnostics: &[CliDiagnostic], source: &str) -> HashMap<U
             .cloned()
             .or_else(|| locate_mentioned_path(root, &cli.summary))
             .unwrap_or_else(|| (validate::root_config_file(root), Range::default()));
-        let Ok(uri) = Url::from_file_path(&primary_path) else { continue };
+        let Ok(uri) = Url::from_file_path(&primary_path) else {
+            continue;
+        };
         // Secondary locations (e.g. a value defined in several files) become related information.
         let related: Vec<DiagnosticRelatedInformation> = locations
             .iter()
             .skip(1)
             .filter_map(|(path, range)| {
                 Some(DiagnosticRelatedInformation {
-                    location: Location { uri: Url::from_file_path(path).ok()?, range: *range },
+                    location: Location {
+                        uri: Url::from_file_path(path).ok()?,
+                        range: *range,
+                    },
                     message: "also defined here".into(),
                 })
             })
@@ -287,7 +316,10 @@ fn locate_mentioned_path(root: &Path, summary: &str) -> Option<(PathBuf, Range)>
                 if let Some(byte) = line.find(name) {
                     let start = line[..byte].encode_utf16().count() as u32;
                     let end = start + name.encode_utf16().count() as u32;
-                    matches.push((file.clone(), Range::new(Position::new(index as u32, start), Position::new(index as u32, end))));
+                    matches.push((
+                        file.clone(),
+                        Range::new(Position::new(index as u32, start), Position::new(index as u32, end)),
+                    ));
                 }
             }
         }
@@ -319,7 +351,9 @@ fn bundle_yaml_files(root: &Path) -> Vec<PathBuf> {
 }
 
 fn read_lines(path: &Path) -> Vec<String> {
-    std::fs::read_to_string(path).map(|text| text.lines().map(String::from).collect()).unwrap_or_default()
+    std::fs::read_to_string(path)
+        .map(|text| text.lines().map(String::from).collect())
+        .unwrap_or_default()
 }
 
 /// Range of the YAML key/token starting at the CLI's 1-based line/column (UTF-16 columns for LSP).
@@ -336,9 +370,16 @@ fn token_range(lines: &[String], line: u32, column: u32) -> Range {
         .iter()
         .take_while(|c| !c.is_whitespace() && **c != ':')
         .count();
-    let end_char = if token_len == 0 { chars.len() } else { start_char + token_len };
+    let end_char = if token_len == 0 {
+        chars.len()
+    } else {
+        start_char + token_len
+    };
     let utf16 = |n: usize| chars[..n].iter().map(|c| c.len_utf16() as u32).sum::<u32>();
-    Range::new(Position::new(line_index, utf16(start_char)), Position::new(line_index, utf16(end_char)))
+    Range::new(
+        Position::new(line_index, utf16(start_char)),
+        Position::new(line_index, utf16(end_char)),
+    )
 }
 
 #[cfg(test)]
@@ -367,9 +408,15 @@ mod tests {
     #[test]
     fn token_range_covers_the_key() {
         let lines = vec!["resources:".into(), "      bogus_field: 1".into()];
-        assert_eq!(token_range(&lines, 2, 7), Range::new(Position::new(1, 6), Position::new(1, 17)));
+        assert_eq!(
+            token_range(&lines, 2, 7),
+            Range::new(Position::new(1, 6), Position::new(1, 17))
+        );
         // Past the end of the file: an empty range at the start of the line.
-        assert_eq!(token_range(&lines, 9, 1), Range::new(Position::new(8, 0), Position::new(8, 0)));
+        assert_eq!(
+            token_range(&lines, 9, 1),
+            Range::new(Position::new(8, 0), Position::new(8, 0))
+        );
     }
 
     #[test]
@@ -377,14 +424,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("resources")).unwrap();
         std::fs::write(dir.path().join("databricks.yml"), "bundle:\n  name: x\n").unwrap();
-        std::fs::write(dir.path().join("resources/job.yml"), "resources:\n  jobs:\n    j:\n      bogus: 1\n").unwrap();
+        std::fs::write(
+            dir.path().join("resources/job.yml"),
+            "resources:\n  jobs:\n    j:\n      bogus: 1\n",
+        )
+        .unwrap();
         let diagnostics = vec![
             CliDiagnostic {
                 severity: Severity::Warning,
                 summary: "unknown field: bogus".into(),
                 detail: String::new(),
                 paths: vec!["resources.jobs.j".into()],
-                locations: vec![CliLocation { file: "resources/job.yml".into(), line: 4, column: 7 }],
+                locations: vec![CliLocation {
+                    file: "resources/job.yml".into(),
+                    line: 4,
+                    column: 7,
+                }],
             },
             CliDiagnostic {
                 severity: Severity::Error,

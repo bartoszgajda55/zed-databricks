@@ -1,0 +1,39 @@
+name: Bug report
+description: Something in the extension, databricks-bundle-ls, the MCP server or the templates doesn't work
+labels: [bug]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Extension (schema, snippets)
+        - databricks-bundle-ls (diagnostics)
+        - databricks-dev MCP server
+        - Project templates (tasks, debugging, stubs, CI)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+      description: For diagnostics, include the bundle YAML involved (with workspace details removed).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `databricks --version`, the Zed version (`zed: about`), the extension version, and your OS.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: For the language server, `dev: open language server logs` → databricks-bundle-ls. Remove tokens and hostnames.
+      render: text

@@ -59,7 +59,9 @@ fn parse_header(line: &str) -> Option<(Severity, &str)> {
 
 /// CLI log output (`Warn: [hostmetadata] …`) is interleaved with diagnostics on stderr.
 fn is_log_line(line: &str) -> bool {
-    ["Trace: ", "Debug: ", "Info: ", "Warn: "].iter().any(|prefix| line.starts_with(prefix))
+    ["Trace: ", "Debug: ", "Info: ", "Warn: "]
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
 }
 
 /// Lines of the trailing summary block (`Name: …`, `Found 1 error`, …) end a detail paragraph.
@@ -149,9 +151,8 @@ mod tests {
 
     #[test]
     fn parses_warning_with_path_and_location() {
-        let diags = parse(
-            "Warning: unknown field: bogus_field\n  at resources.jobs.my_job\n  in resources/job.yml:5:7\n\n",
-        );
+        let diags =
+            parse("Warning: unknown field: bogus_field\n  at resources.jobs.my_job\n  in resources/job.yml:5:7\n\n");
         assert_eq!(
             diags,
             vec![CliDiagnostic {
@@ -159,7 +160,11 @@ mod tests {
                 summary: "unknown field: bogus_field".into(),
                 detail: String::new(),
                 paths: vec!["resources.jobs.my_job".into()],
-                locations: vec![Location { file: "resources/job.yml".into(), line: 5, column: 7 }],
+                locations: vec![Location {
+                    file: "resources/job.yml".into(),
+                    line: 5,
+                    column: 7
+                }],
             }]
         );
     }
@@ -189,8 +194,18 @@ Found 1 error and 1 recommendation
         assert_eq!(diags[0].severity, Severity::Error);
         assert_eq!(diags[0].paths, vec!["variables.foo", "targets.dev.variables.foo"]);
         assert_eq!(diags[0].locations.len(), 2);
-        assert_eq!(diags[0].locations[1], Location { file: "resources/a.yml".into(), line: 3, column: 9 });
-        assert_eq!(diags[0].detail, "The variable is defined twice with different types.\nPick one.");
+        assert_eq!(
+            diags[0].locations[1],
+            Location {
+                file: "resources/a.yml".into(),
+                line: 3,
+                column: 9
+            }
+        );
+        assert_eq!(
+            diags[0].detail,
+            "The variable is defined twice with different types.\nPick one."
+        );
         assert_eq!(diags[1].severity, Severity::Recommendation);
         assert_eq!(diags[1].detail, "");
     }
@@ -223,7 +238,11 @@ Found 1 error
     fn location_with_colon_in_path() {
         assert_eq!(
             parse_location("C:/work/databricks.yml:1:2"),
-            Some(Location { file: "C:/work/databricks.yml".into(), line: 1, column: 2 })
+            Some(Location {
+                file: "C:/work/databricks.yml".into(),
+                line: 1,
+                column: 2
+            })
         );
         assert_eq!(parse_location("no-location"), None);
     }

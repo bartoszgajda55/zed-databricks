@@ -1,4 +1,4 @@
-"""Checks for the MVP: extension manifest, snippets, project templates and setup script.
+"""Extension manifest, snippets, project templates and the setup script.
 
 Run with:  uv run pytest   # after scripts/dev-setup.sh
 """
@@ -14,7 +14,9 @@ import jsonschema
 import pytest
 import regex
 import yaml
+from jsonschema import validators
 
+from runner_module import runner
 from zed_snippet import body_source, expand, parse
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,10 +25,8 @@ SNIPPET_FILES = sorted((ROOT / "snippets").glob("*.json"))
 HAS_CLI = shutil.which("databricks") is not None
 
 
-def load_jsonc(path):
-    """Zed settings files allow // comments; strip full-line comments before parsing."""
-    lines = [l for l in path.read_text().splitlines() if not l.lstrip().startswith("//")]
-    return json.loads("\n".join(lines))
+def load_jsonc(path: Path):
+    return json.loads(runner.strip_jsonc(path.read_text()))
 
 
 def all_snippets():
@@ -43,7 +43,7 @@ def _unicode_pattern(validator, pattern, instance, schema):
         yield jsonschema.ValidationError(f"{instance!r} does not match {pattern!r}")
 
 
-BundleValidator = jsonschema.validators.extend(jsonschema.Draft7Validator, {"pattern": _unicode_pattern})
+BundleValidator = validators.extend(jsonschema.Draft7Validator, {"pattern": _unicode_pattern})
 
 
 # --- manifest -----------------------------------------------------------------
@@ -119,9 +119,7 @@ def test_every_yaml_snippet_has_a_placement():
     assert prefixes == set(YAML_SNIPPET_PARENT)
 
 
-@pytest.mark.parametrize(
-    "language,snippet", [p for p in all_snippets() if p.values[0] == "yaml"]
-)
+@pytest.mark.parametrize("language,snippet", [p for p in all_snippets() if p.values[0] == "yaml"])
 def test_yaml_snippet_expands_to_schema_valid_bundle(language, snippet, bundle_schema):
     fragment = yaml.safe_load(expand(snippet))
     doc = fragment
@@ -131,9 +129,7 @@ def test_yaml_snippet_expands_to_schema_valid_bundle(language, snippet, bundle_s
     assert not errors, "\n".join(f"{list(e.absolute_path)}: {e.message[:200]}" for e in errors)
 
 
-@pytest.mark.parametrize(
-    "language,snippet", [p for p in all_snippets() if p.values[0] == "python"]
-)
+@pytest.mark.parametrize("language,snippet", [p for p in all_snippets() if p.values[0] == "python"])
 def test_python_snippet_is_valid_python(language, snippet):
     source = expand(snippet)
     if source.lstrip().startswith("@") and "def " not in source:
@@ -190,7 +186,9 @@ def test_setup_project_installs_templates_and_is_idempotent(tmp_path):
     assert (tmp_path / "typings/pyspark-stubs/py.typed").read_text() == "partial\n"
     assert (tmp_path / "__builtins__.pyi").exists()
     assert (tmp_path / ".zed/debug.json").exists()
-    assert (tmp_path / ".zed/databricks/connect_runner.py").read_text() == (TEMPLATE / "databricks/connect_runner.py").read_text()
+    assert (tmp_path / ".zed/databricks/connect_runner.py").read_text() == (
+        TEMPLATE / "databricks/connect_runner.py"
+    ).read_text()
 
     second = run_setup(tmp_path)
     assert "unchanged .zed/tasks.json" in second.stdout

@@ -44,7 +44,8 @@ def test_portable_sdp_snippets_dry_run_on_oss_spark(tmp_path):
         f"name: snippets\nstorage: file://{tmp_path}/storage\nlibraries:\n  - glob:\n      include: transformations/**\n"
     )
     # Upstream source every snippet's default placeholders read from.
-    (transformations / "source.py").write_text(textwrap.dedent("""\
+    (transformations / "source.py").write_text(
+        textwrap.dedent("""\
         from pyspark import pipelines as dp
 
         @dp.table(name="source_table")
@@ -52,10 +53,16 @@ def test_portable_sdp_snippets_dry_run_on_oss_spark(tmp_path):
             return spark.readStream.format("rate").load().selectExpr(
                 "value AS id", "value AS customer_id", "timestamp AS updated_at", "CAST(value % 3 AS STRING) AS event_type"
             )
-        """))
-    (transformations / "cdc_source.sql").write_text("CREATE TEMPORARY VIEW customers_cdc AS SELECT * FROM STREAM source_table;\n")
+        """)
+    )
+    (transformations / "cdc_source.sql").write_text(
+        "CREATE TEMPORARY VIEW customers_cdc AS SELECT * FROM STREAM source_table;\n"
+    )
     (transformations / "python_snippets.py").write_text(
-        "\n\n".join([py["sdp-import"], py["sdp-table"], py["sdp-mv"], py["sdp-view"], py["sdp-append-flow"], py["sdp-cdc"]]) + "\n"
+        "\n\n".join(
+            [py["sdp-import"], py["sdp-table"], py["sdp-mv"], py["sdp-view"], py["sdp-append-flow"], py["sdp-cdc"]]
+        )
+        + "\n"
     )
     # SQL snippets use the same default names as the Python ones; rename to avoid duplicate datasets.
     renamed = {
@@ -65,7 +72,11 @@ def test_portable_sdp_snippets_dry_run_on_oss_spark(tmp_path):
         "sdp-append-flow": ("all_events", "sql_all_events", "source_table"),
     }
     for prefix, (name, new_name, upstream) in renamed.items():
-        text = sql[prefix].replace(name, new_name).replace("bronze_events", upstream) if prefix != "sdp-st" else sql[prefix].replace(name, new_name)
+        text = (
+            sql[prefix].replace(name, new_name).replace("bronze_events", upstream)
+            if prefix != "sdp-st"
+            else sql[prefix].replace(name, new_name)
+        )
         text = text.replace("append_from_source", "sql_append_from_source")
         (transformations / f"{prefix.replace('-', '_')}.sql").write_text(text)
 
@@ -77,9 +88,7 @@ def test_portable_sdp_snippets_dry_run_on_oss_spark(tmp_path):
 def test_pytest_fixture_and_chispa_snippets_run_locally(tmp_path):
     py = snippets("python")
     (tmp_path / "conftest.py").write_text(py["pyspark-fixture"] + "\n")
-    (tmp_path / "test_snippet.py").write_text(
-        "def transform(df):\n    return df\n\n\n" + py["pyspark-test"] + "\n"
-    )
+    (tmp_path / "test_snippet.py").write_text("def transform(df):\n    return df\n\n\n" + py["pyspark-test"] + "\n")
     result = run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", str(tmp_path)], tmp_path)
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
     assert "1 passed" in result.stdout

@@ -34,7 +34,7 @@ The server needs the Databricks CLI on `PATH`, authenticated with `databricks au
 }
 ```
 
-For **Zed**, add the block above under `context_servers` in `settings.json`, or install it from the MCP registry (`io.github.bartoszgajda55/databricks-dev`) once it's published.
+For **Zed**, add the block above under `context_servers` in `settings.json`. The server is also listed in the MCP registry as `io.github.bartoszgajda55/databricks-dev`.
 
 | Variable | Default |
 | --- | --- |
@@ -42,6 +42,7 @@ For **Zed**, add the block above under `context_servers` in `settings.json`, or 
 | `DATABRICKS_BUNDLE_TARGET` | The bundle's `default: true` target |
 | `DATABRICKS_BUNDLE_ROOT` | The server's working directory |
 | `DATABRICKS_CLI_PATH` | `databricks` on `PATH` |
+| `DATABRICKS_DEV_MCP_ALLOW_AGENT_CONFIRM` | Unset: cluster start/stop need a client that can ask the user (see [Safety](#safety)) |
 
 ## Safety
 
@@ -50,7 +51,7 @@ For **Zed**, add the block above under `context_servers` in `settings.json`, or 
 - **Cluster start/stop:** the server asks the *user* through MCP elicitation, using a resolver. The answer comes from the client, so the agent can't supply it. This works with both the 2026-07-28 input-required flow and older protocol versions.
   - The question shows the cluster's name, size and auto-termination setting.
   - If the user declines or cancels, nothing changes.
-  - Clients without elicitation get a preview instead, and must call again with `confirm=true`. Those clients still prompt for write tools themselves.
+  - Clients without elicitation can't ask, so start/stop are **disabled** there by default. Setting `DATABRICKS_DEV_MCP_ALLOW_AGENT_CONFIRM=1` enables a fallback: the tool returns the question, the agent asks you in chat, then calls again with `confirm=true`. The agent confirms on your behalf, so your client's own tool-approval prompt is the remaining safeguard.
 - **Secrets:** secret values are never requested or returned.
 
 ## Development

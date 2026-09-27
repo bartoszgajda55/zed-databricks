@@ -1,11 +1,10 @@
-"""Component 6: debugging with Databricks Connect via Zed's Debugpy adapter.
+"""Debugging with Databricks Connect through Zed's Debugpy adapter.
 
 Offline tests replace `databricks.connect` with a fake (sitecustomize); the live test uses a
 real Databricks Connect environment when DATABRICKS_CONNECT_PYTHON and DATABRICKS_LIVE_PROFILE
 are set (serverless compute unless the bundle target defines a cluster).
 """
 
-import importlib.util
 import json
 import os
 import sys
@@ -15,15 +14,11 @@ from pathlib import Path
 import pytest
 
 from dap_client import DapClient, debug_until_breakpoint, evaluate
+from runner_module import RUNNER, runner
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNNER = ROOT / "project-template/.zed/databricks/connect_runner.py"
 DEBUG_TEMPLATE = ROOT / "project-template/.zed/debug.json"
 
-spec = importlib.util.spec_from_file_location("connect_runner", RUNNER)
-runner = importlib.util.module_from_spec(spec)
-sys.modules["connect_runner"] = runner  # dataclasses resolve annotations via sys.modules
-spec.loader.exec_module(runner)
 
 FAKE_CONNECT = textwrap.dedent("""\
     # Test double for databricks-connect, loaded before the runner via sitecustomize.
@@ -64,6 +59,14 @@ JOB = textwrap.dedent("""\
     """)
 
 
+@pytest.mark.parametrize(
+    "case", json.loads((ROOT / "tests/fixtures/jsonc-cases.json").read_text()), ids=lambda c: c["name"]
+)
+def test_strip_jsonc_shared_cases(case):
+    """The same cases run against databricks-bundle-ls's Rust implementation."""
+    assert json.loads(runner.strip_jsonc(case["input"])) == case["expected"]
+
+
 def load_jsonc(path: Path):
     return json.loads(runner.strip_jsonc(path.read_text()))
 
@@ -87,27 +90,43 @@ def test_compute_resolution_order(tmp_path, monkeypatch):
     )
     (tmp_path / "databricks.yml").write_text("bundle: {name: x}\n")
     calls = []
-    monkeypatch.setattr(runner, "bundle_cluster_id", lambda root, target, profile: calls.append((target, profile)) or "bundle-cluster")
-    O = runner.Options
+    monkeypatch.setattr(
+        runner, "bundle_cluster_id", lambda root, target, profile: calls.append((target, profile)) or "bundle-cluster"
+    )
+    options = runner.Options
 
-    assert runner.resolve(O(serverless=True), tmp_path, {}) == runner.Compute("from-zed", None, "--serverless")
-    assert runner.resolve(O(cluster_id="c1", profile="p"), tmp_path, {}).cluster_id == "c1"
-    assert runner.resolve(O(), tmp_path, {"DATABRICKS_CLUSTER_ID": "env-c"}).source == "DATABRICKS_CLUSTER_ID"
-    from_bundle = runner.resolve(O(), tmp_path, {"DATABRICKS_CONFIG_PROFILE": "env-p"})
+    assert runner.resolve(options(serverless=True), tmp_path, {}) == runner.Compute("from-zed", None, "--serverless")
+    assert runner.resolve(options(cluster_id="c1", profile="p"), tmp_path, {}).cluster_id == "c1"
+    assert runner.resolve(options(), tmp_path, {"DATABRICKS_CLUSTER_ID": "env-c"}).source == "DATABRICKS_CLUSTER_ID"
+    from_bundle = runner.resolve(options(), tmp_path, {"DATABRICKS_CONFIG_PROFILE": "env-p"})
     assert from_bundle == runner.Compute("env-p", "bundle-cluster", "bundle target dev")
     assert calls[-1] == ("dev", "env-p")
 
     monkeypatch.setattr(runner, "bundle_cluster_id", lambda *_: None)
-    assert runner.resolve(O(), tmp_path, {}).describe() == "Databricks Connect: serverless (default), profile from-zed"
+    assert (
+        runner.resolve(options(), tmp_path, {}).describe()
+        == "Databricks Connect: serverless (default), profile from-zed"
+    )
 
 
 def test_bundle_cluster_id_reads_the_resolved_target(tmp_path, monkeypatch):
     fake = tmp_path / "databricks"
-    fake.write_text('#!/bin/sh\necho "$@" > "$(dirname "$0")/args"\necho \'{"bundle": {"cluster_id": "0923-abc"}}\'\nexit 1\n')
+    fake.write_text(
+        '#!/bin/sh\necho "$@" > "$(dirname "$0")/args"\necho \'{"bundle": {"cluster_id": "0923-abc"}}\'\nexit 1\n'
+    )
     fake.chmod(0o755)
     monkeypatch.setenv("DATABRICKS_CLI_PATH", str(fake))
     assert runner.bundle_cluster_id(tmp_path, "dev", "p") == "0923-abc"
-    assert (tmp_path / "args").read_text().split() == ["bundle", "validate", "--output", "json", "--target", "dev", "--profile", "p"]
+    assert (tmp_path / "args").read_text().split() == [
+        "bundle",
+        "validate",
+        "--output",
+        "json",
+        "--target",
+        "dev",
+        "--profile",
+        "p",
+    ]
 
 
 def test_debug_template_uses_zeds_debugpy_adapter():
@@ -165,8 +184,11 @@ CONNECT_PYTHON = os.environ.get("DATABRICKS_CONNECT_PYTHON")
 LIVE_PROFILE = os.environ.get("DATABRICKS_LIVE_PROFILE")
 
 
-@pytest.mark.skipif(not (CONNECT_PYTHON and LIVE_PROFILE), reason="set DATABRICKS_CONNECT_PYTHON and DATABRICKS_LIVE_PROFILE")
+@pytest.mark.skipif(
+    not (CONNECT_PYTHON and LIVE_PROFILE), reason="set DATABRICKS_CONNECT_PYTHON and DATABRICKS_LIVE_PROFILE"
+)
 def test_live_breakpoint_on_databricks_compute(job):
+    assert CONNECT_PYTHON and LIVE_PROFILE
     env = {"DATABRICKS_CONFIG_PROFILE": LIVE_PROFILE, "PATH": os.environ["PATH"], "HOME": os.environ["HOME"]}
     client = DapClient(CONNECT_PYTHON)
     try:

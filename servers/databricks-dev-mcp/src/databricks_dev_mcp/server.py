@@ -7,6 +7,8 @@ they do in a terminal.
 from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -25,14 +27,20 @@ Tools for Databricks development driven by the `databricks` CLI.
 - Bundle tools act on the bundle in `bundle_dir` (default: DATABRICKS_BUNDLE_ROOT or the server's working directory).
 - `target` / `profile` default to DATABRICKS_BUNDLE_TARGET / DATABRICKS_CONFIG_PROFILE, then the bundle's default target.
 - Validate before deploying. Deploys and runs change the workspace; production-mode targets need allow_production=true.
-- cluster_start / cluster_stop ask the user to confirm (MCP elicitation). If the client cannot ask, they return a
-  preview: show it to the user and only call again with confirm=true once the user agrees.
+- cluster_start / cluster_stop ask the user to confirm (MCP elicitation). If the client cannot ask and the server
+  allows agent confirmation, they return a preview: show it to the user and only call again with confirm=true once
+  the user agrees.
 - Secret tools only ever return scope and key names, never values.
 """
 
 server = MCPServer("databricks-dev", instructions=INSTRUCTIONS)
 
-READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=True)
+
+# Set to 1 to let clients without MCP elicitation run cluster start/stop with `confirm=true`.
+ALLOW_AGENT_CONFIRM_ENV = "DATABRICKS_DEV_MCP_ALLOW_AGENT_CONFIRM"
+
+PIPELINE_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
 
 def _drop_nulls(value: Any) -> Any:
@@ -57,7 +65,9 @@ async def _resolved_config(
     bundle_dir: str | None, target: str | None, profile: str | None, variables: dict[str, str] | None = None
 ) -> tuple[dict[str, Any], cli.CliResult]:
     root = cli.bundle_dir(bundle_dir)
-    result = await cli.run("bundle", "validate", "--output", "json", target=target, profile=profile, variables=variables, cwd=root)
+    result = await cli.run(
+        "bundle", "validate", "--output", "json", target=target, profile=profile, variables=variables, cwd=root
+    )
     # stdout carries the resolved configuration even when validation reports errors.
     if not result.stdout.strip():
         result.raise_for_status()
@@ -66,10 +76,14 @@ async def _resolved_config(
 
 async def _resource_id(kind: str, value: str, bundle_dir: str | None, target: str | None, profile: str | None) -> str:
     """Accept a workspace ID or a bundle resource key (looked up in the deployed bundle's summary)."""
-    if value.isdigit() or (kind == "pipelines" and "-" in value and len(value) >= 32):
+    if (kind == "jobs" and value.isdigit()) or (kind == "pipelines" and PIPELINE_ID.match(value)):
         return value
     root = cli.bundle_dir(bundle_dir)
-    summary = (await cli.run("bundle", "summary", "--output", "json", target=target, profile=profile, cwd=root)).raise_for_status().json()
+    summary = (
+        (await cli.run("bundle", "summary", "--output", "json", target=target, profile=profile, cwd=root))
+        .raise_for_status()
+        .json()
+    )
     resource = ((summary.get("resources") or {}).get(kind) or {}).get(value)
     if not resource or not resource.get("id"):
         raise CliError(f"{kind}.{value} is not defined in the bundle or has not been deployed to this target")
@@ -92,7 +106,8 @@ async def bundle_validate(
     """
     root = cli.bundle_dir(bundle_dir)
     result = await cli.run("bundle", "validate", target=target, profile=profile, variables=variables, cwd=root)
-    status = "Validation passed" if result.ok and "Error:" not in result.stderr else "Validation failed"
+    # Exit status 1 means errors; warnings and recommendations alone still pass.
+    status = "Validation passed" if result.ok else "Validation failed"
     return f"{status} (exit {result.exit_code}).\n\n{truncate(result.stderr.strip() or result.stdout.strip())}"
 
 
@@ -106,12 +121,14 @@ async def explain_bundle_graph(
     """Describe the bundle's jobs, task dependency order, pipelines, and cross-resource references for a target."""
     config, result = await _resolved_config(bundle_dir, target, profile, variables)
     text = graph.explain(config)
-    if "Error:" in result.stderr:
-        text += "\n\nValidation reported problems (run bundle_validate for details)."
+    if not result.ok:
+        text += "\n\nValidation reported errors (run bundle_validate for details)."
     return text
 
 
-@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True))
+@server.tool(
+    annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=True)
+)
 async def bundle_deploy(
     target: str,
     profile: str | None = None,
@@ -134,7 +151,7 @@ async def bundle_deploy(
     return f"Deployed to target {target!r}.\n\n{truncate((result.stderr + result.stdout).strip())}"
 
 
-@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
+@server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=True))
 async def bundle_run(
     resource: str,
     target: str | None = None,
@@ -150,7 +167,9 @@ async def bundle_run(
     """
     root = cli.bundle_dir(bundle_dir)
     args = ["bundle", "run", resource] + ([] if wait else ["--no-wait"])
-    result = await cli.run(*args, target=target, profile=profile, variables=variables, cwd=root, timeout=3600 if wait else 300)
+    result = await cli.run(
+        *args, target=target, profile=profile, variables=variables, cwd=root, timeout=3600 if wait else 300
+    )
     result.raise_for_status()
     return truncate((result.stdout + result.stderr).strip()) or f"Started {resource}."
 
@@ -181,7 +200,15 @@ async def job_run_status(
 ) -> str:
     """Recent runs of a job, newest first. `job` is a job ID or a bundle job key (e.g. `daily_job`)."""
     job_id = await _resource_id("jobs", job, bundle_dir, target, profile)
-    runs = (await cli.run("jobs", "list-runs", "--job-id", job_id, "--limit", str(limit), "--output", "json", profile=profile)).raise_for_status().json()
+    runs = (
+        (
+            await cli.run(
+                "jobs", "list-runs", "--job-id", job_id, "--limit", str(limit), "--output", "json", profile=profile
+            )
+        )
+        .raise_for_status()
+        .json()
+    )
     runs = runs if isinstance(runs, list) else runs.get("runs") or []
     if not runs:
         return f"Job {job_id} has no runs."
@@ -217,10 +244,25 @@ async def pipeline_run_status(
 ) -> str:
     """Current state and recent updates of a pipeline. `pipeline` is a pipeline ID or a bundle pipeline key."""
     pipeline_id = await _resource_id("pipelines", pipeline, bundle_dir, target, profile)
-    info = (await cli.run("pipelines", "get", pipeline_id, "--output", "json", profile=profile)).raise_for_status().json()
+    info = (
+        (await cli.run("pipelines", "get", pipeline_id, "--output", "json", profile=profile)).raise_for_status().json()
+    )
     updates = (
-        await cli.run("pipelines", "list-updates", pipeline_id, "--max-results", str(limit), "--output", "json", profile=profile)
-    ).raise_for_status().json()
+        (
+            await cli.run(
+                "pipelines",
+                "list-updates",
+                pipeline_id,
+                "--max-results",
+                str(limit),
+                "--output",
+                "json",
+                profile=profile,
+            )
+        )
+        .raise_for_status()
+        .json()
+    )
     return _json(
         {
             "pipeline_id": pipeline_id,
@@ -240,12 +282,18 @@ async def pipeline_run_status(
 
 
 @server.tool(annotations=READ_ONLY)
-async def uc_lookup(catalog: str, schema: str | None = None, table: str | None = None, profile: str | None = None) -> str:
+async def uc_lookup(
+    catalog: str, schema: str | None = None, table: str | None = None, profile: str | None = None
+) -> str:
     """Unity Catalog metadata: schemas of a catalog, tables of a schema, or one table's columns."""
     if table and not schema:
         raise CliError("table requires schema")
     if table:
-        data = (await cli.run("tables", "get", f"{catalog}.{schema}.{table}", "--output", "json", profile=profile)).raise_for_status().json()
+        data = (
+            (await cli.run("tables", "get", f"{catalog}.{schema}.{table}", "--output", "json", profile=profile))
+            .raise_for_status()
+            .json()
+        )
         return _json(
             {
                 "full_name": data.get("full_name"),
@@ -253,14 +301,25 @@ async def uc_lookup(catalog: str, schema: str | None = None, table: str | None =
                 "format": data.get("data_source_format"),
                 "comment": data.get("comment"),
                 "columns": [
-                    {"name": c.get("name"), "type": c.get("type_text"), "nullable": c.get("nullable"), "comment": c.get("comment")}
+                    {
+                        "name": c.get("name"),
+                        "type": c.get("type_text"),
+                        "nullable": c.get("nullable"),
+                        "comment": c.get("comment"),
+                    }
                     for c in data.get("columns") or []
                 ],
             }
         )
     if schema:
-        data = (await cli.run("tables", "list", catalog, schema, "--omit-columns", "--output", "json", profile=profile)).raise_for_status().json()
-        return _json([{"name": t.get("name"), "type": t.get("table_type"), "comment": t.get("comment")} for t in data or []])
+        data = (
+            (await cli.run("tables", "list", catalog, schema, "--omit-columns", "--output", "json", profile=profile))
+            .raise_for_status()
+            .json()
+        )
+        return _json(
+            [{"name": t.get("name"), "type": t.get("table_type"), "comment": t.get("comment")} for t in data or []]
+        )
     data = (await cli.run("schemas", "list", catalog, "--output", "json", profile=profile)).raise_for_status().json()
     return _json([{"name": s.get("name"), "comment": s.get("comment")} for s in data or []])
 
@@ -272,8 +331,17 @@ def _cluster_summary(cluster: dict[str, Any]) -> dict[str, Any]:
     return {
         k: cluster.get(k)
         for k in (
-            "cluster_id", "cluster_name", "state", "state_message", "spark_version", "node_type_id",
-            "num_workers", "autoscale", "autotermination_minutes", "cluster_source", "creator_user_name",
+            "cluster_id",
+            "cluster_name",
+            "state",
+            "state_message",
+            "spark_version",
+            "node_type_id",
+            "num_workers",
+            "autoscale",
+            "autotermination_minutes",
+            "cluster_source",
+            "creator_user_name",
         )
         if cluster.get(k) is not None
     }
@@ -324,13 +392,17 @@ class Gate:
     message: str = ""
 
 
-async def _gate(action: str, cluster_id: str, profile: str | None, confirm: bool, ctx: Context) -> Gate | Elicit[Confirmation]:
+async def _gate(
+    action: str, cluster_id: str, profile: str | None, confirm: bool, ctx: Context
+) -> Gate | Elicit[Confirmation]:
     """Decide whether a start/stop may run, asking the user through the client when it can.
 
     Runs as a resolver (see `Resolve`), so the answer comes from the user via MCP elicitation;
     it cannot be supplied in the tool arguments by the agent.
     """
-    cluster = (await cli.run("clusters", "get", cluster_id, "--output", "json", profile=profile)).raise_for_status().json()
+    cluster = (
+        (await cli.run("clusters", "get", cluster_id, "--output", "json", profile=profile)).raise_for_status().json()
+    )
     state = cluster.get("state")
     if (action == "start" and state in ACTIVE_STATES) or (action == "stop" and state in STOPPED_STATES):
         return Gate(False, f"Nothing to do: cluster {_describe_cluster(cluster)}.")
@@ -348,6 +420,12 @@ async def _gate(action: str, cluster_id: str, profile: str | None, confirm: bool
     capabilities = ctx.client_capabilities
     if capabilities is not None and capabilities.elicitation is not None:
         return Elicit(question, Confirmation)
+    if os.environ.get(ALLOW_AGENT_CONFIRM_ENV, "").lower() not in ("1", "true", "yes"):
+        raise CliError(
+            f"This MCP client cannot ask the user to confirm (no elicitation support), so cluster {action} is "
+            f"disabled. To allow it, the user can set {ALLOW_AGENT_CONFIRM_ENV}=1 in this server's environment; "
+            "the agent then confirms on the user's behalf, guarded only by the client's tool approval."
+        )
     if not confirm:
         raise CliError(f"Confirmation required. Ask the user: {question} Then call again with confirm=true.")
     return Gate(True)
@@ -373,27 +451,45 @@ async def _power(action: str, cluster_id: str, profile: str | None, approval: El
 
     command = ["clusters", "start" if action == "start" else "delete", cluster_id, "--no-wait"]
     (await cli.run(*command, profile=profile)).raise_for_status()
-    after = (await cli.run("clusters", "get", cluster_id, "--output", "json", profile=profile)).raise_for_status().json()
+    after = (
+        (await cli.run("clusters", "get", cluster_id, "--output", "json", profile=profile)).raise_for_status().json()
+    )
     return f"{verb} requested. Cluster {_describe_cluster(after)}. Use cluster_status to follow progress."
 
 
-@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True))
+@server.tool(
+    annotations=ToolAnnotations(
+        read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True
+    )
+)
 async def cluster_start(
     cluster_id: str,
     approval: Annotated[ElicitationResult[Confirmation], Resolve(_start_gate)],
     profile: str | None = None,
-    confirm: bool = False,
+    confirm: Annotated[
+        bool,
+        Field(
+            description=f"Only used when the client cannot ask the user and {ALLOW_AGENT_CONFIRM_ENV}=1; set it after the user agreed in chat."
+        ),
+    ] = False,
 ) -> str:
     """Start a terminated all-purpose cluster (asks the user to confirm; starting incurs cost). Returns without waiting."""
     return await _power("start", cluster_id, profile, approval)
 
 
-@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True))
+@server.tool(
+    annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=True)
+)
 async def cluster_stop(
     cluster_id: str,
     approval: Annotated[ElicitationResult[Confirmation], Resolve(_stop_gate)],
     profile: str | None = None,
-    confirm: bool = False,
+    confirm: Annotated[
+        bool,
+        Field(
+            description=f"Only used when the client cannot ask the user and {ALLOW_AGENT_CONFIRM_ENV}=1; set it after the user agreed in chat."
+        ),
+    ] = False,
 ) -> str:
     """Terminate a running all-purpose cluster (asks the user to confirm). Restartable; never permanently deletes."""
     return await _power("stop", cluster_id, profile, approval)
@@ -409,7 +505,11 @@ async def secret_scopes_list(scope: str | None = None, profile: str | None = Non
     Use these to write `dbutils.secrets.get(scope, key)` calls correctly.
     """
     if scope:
-        data = (await cli.run("secrets", "list-secrets", scope, "--output", "json", profile=profile)).raise_for_status().json()
+        data = (
+            (await cli.run("secrets", "list-secrets", scope, "--output", "json", profile=profile))
+            .raise_for_status()
+            .json()
+        )
         return _json({"scope": scope, "keys": sorted(s.get("key") for s in data or [])})
     data = (await cli.run("secrets", "list-scopes", "--output", "json", profile=profile)).raise_for_status().json()
     return _json(sorted(s.get("name") for s in data or []))

@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups: { actions: { patterns: ["*"] } }
+  - package-ecosystem: cargo
+    directories: [/, /servers/databricks-bundle-ls]
+    schedule: { interval: monthly }
+    groups: { cargo: { patterns: ["*"] } }
+  - package-ecosystem: uv
+    directory: /
+    schedule: { interval: monthly }
+    groups: { python: { patterns: ["*"] } }

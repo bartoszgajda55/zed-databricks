@@ -19,6 +19,11 @@ jobs:
           java-version: "21"
       - uses: databricks/setup-cli@v1.17.0
       - run: uv sync
+      - name: Lint and type-check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run basedpyright
       # Snippets, templates, stubs, local Spark integration and the MCP server (fake CLI).
       - run: uv run pytest
 
@@ -29,6 +34,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -37,8 +43,13 @@ jobs:
       - uses: databricks/setup-cli@v1.17.0
       - name: Extension (wasm)
         run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
           cargo build --release --target wasm32-wasip2
           cargo test
       - name: databricks-bundle-ls
         working-directory: servers/databricks-bundle-ls
-        run: cargo test
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test

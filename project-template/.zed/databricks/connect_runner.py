@@ -27,7 +27,6 @@ from __future__ import annotations
 import builtins
 import json
 import os
-import re
 import runpy
 import shutil
 import subprocess
@@ -86,32 +85,46 @@ def parse_args(argv: list[str]) -> Options:
 
 
 def strip_jsonc(text: str) -> str:
-    """Zed settings allow comments and trailing commas."""
+    """Remove comments and trailing commas: Zed settings are JSON with both."""
+    return _scan(_scan(text, _skip_comment), _skip_trailing_comma)
+
+
+def _skip_comment(text: str, i: int) -> int | None:
+    """End index of a comment starting at `i`, or None if there is none."""
+    if text.startswith("//", i):
+        end = text.find("\n", i)
+        return len(text) if end < 0 else end
+    if text.startswith("/*", i):
+        end = text.find("*/", i + 2)
+        return len(text) if end < 0 else end + 2
+    return None
+
+
+def _skip_trailing_comma(text: str, i: int) -> int | None:
+    if text[i] == "," and text[i + 1 :].lstrip()[:1] in ("}", "]"):
+        return i + 1
+    return None
+
+
+def _scan(text: str, skip) -> str:
+    """Copy `text`, dropping the spans `skip(text, i)` reports outside of string literals."""
     out, i, in_string = [], 0, False
     while i < len(text):
         c = text[i]
         if in_string:
-            out.append(c)
-            if c == "\\" and i + 1 < len(text):
-                out.append(text[i + 1])
-                i += 1
-            elif c == '"':
-                in_string = False
+            if c == "\\":
+                out.append(text[i : i + 2])
+                i += 2
+                continue
+            in_string = c != '"'
         elif c == '"':
             in_string = True
-            out.append(c)
-        elif text.startswith("//", i):
-            while i < len(text) and text[i] != "\n":
-                i += 1
+        elif (end := skip(text, i)) is not None:
+            i = end
             continue
-        elif text.startswith("/*", i):
-            end = text.find("*/", i + 2)
-            i = len(text) if end < 0 else end + 2
-            continue
-        else:
-            out.append(c)
+        out.append(c)
         i += 1
-    return re.sub(r",(\s*[}\]])", r"\1", "".join(out))
+    return "".join(out)
 
 
 def zed_terminal_env(start: Path) -> dict[str, str]:
@@ -164,9 +177,8 @@ def resolve(options: Options, start: Path, environ: dict[str, str]) -> Compute:
     if cluster := pick(None, CLUSTER_ENV):
         return Compute(profile, cluster, CLUSTER_ENV)
     target = pick(options.target, TARGET_ENV)
-    if root := find_bundle_root(start):
-        if cluster := bundle_cluster_id(root, target, profile):
-            return Compute(profile, cluster, f"bundle target {target or '(default)'}")
+    if (root := find_bundle_root(start)) and (cluster := bundle_cluster_id(root, target, profile)):
+        return Compute(profile, cluster, f"bundle target {target or '(default)'}")
     return Compute(profile, None, "default")
 
 

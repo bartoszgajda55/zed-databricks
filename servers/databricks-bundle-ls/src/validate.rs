@@ -48,7 +48,11 @@ pub fn select(settings: &Settings, bundle_root: &Path, env: impl Fn(&str) -> Opt
         explicit
             .clone()
             .or_else(|| env(name))
-            .or_else(|| terminal_env.as_ref().and_then(|e| e.get(name)?.as_str().map(String::from)))
+            .or_else(|| {
+                terminal_env
+                    .as_ref()
+                    .and_then(|e| e.get(name)?.as_str().map(String::from))
+            })
             .filter(|value| !value.is_empty())
     };
     Selection {
@@ -180,7 +184,10 @@ pub fn command_args(settings: &Settings, selection: &Selection) -> Vec<String> {
 
 pub fn run(settings: &Settings, bundle_root: &Path) -> Result<Outcome, String> {
     let selection = select(settings, bundle_root, |name| std::env::var(name).ok());
-    let program = settings.databricks_path.clone().unwrap_or_else(|| "databricks".to_string());
+    let program = settings
+        .databricks_path
+        .clone()
+        .unwrap_or_else(|| "databricks".to_string());
     let mut child = Command::new(&program)
         .args(command_args(settings, &selection))
         .current_dir(bundle_root)
@@ -203,28 +210,33 @@ pub fn run(settings: &Settings, bundle_root: &Path) -> Result<Outcome, String> {
     if child.wait_timeout(timeout).map_err(|err| err.to_string())?.is_none() {
         let _ = child.kill();
         let _ = child.wait();
-        return Err(format!("`{program} bundle validate` timed out after {}s", timeout.as_secs()));
+        return Err(format!(
+            "`{program} bundle validate` timed out after {}s",
+            timeout.as_secs()
+        ));
     }
     let stderr = reader.join().unwrap_or_default();
-    Ok(Outcome { diagnostics: cli_output::parse(&stderr), selection })
+    Ok(Outcome {
+        diagnostics: cli_output::parse(&stderr),
+        selection,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Shared with the Python implementation in project-template/.zed/databricks/connect_runner.py.
     #[test]
-    fn strips_comments_and_trailing_commas() {
-        let text = r#"// top
-        {
-          "a": "http://x", /* inline */
-          "b": ["//not a comment", 2,],
-          "c": {"d": 1,},
-        }"#;
-        let value: serde_json::Value = serde_json::from_str(&strip_jsonc(text)).unwrap();
-        assert_eq!(value["a"], "http://x");
-        assert_eq!(value["b"][0], "//not a comment");
-        assert_eq!(value["c"]["d"], 1);
+    fn strip_jsonc_shared_cases() {
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../../../tests/fixtures/jsonc-cases.json")).unwrap();
+        for case in cases {
+            let input = case["input"].as_str().unwrap();
+            let parsed: serde_json::Value =
+                serde_json::from_str(&strip_jsonc(input)).unwrap_or_else(|err| panic!("{}: {err}", case["name"]));
+            assert_eq!(parsed, case["expected"], "{}", case["name"]);
+        }
     }
 
     #[test]
@@ -245,15 +257,23 @@ mod tests {
         assert_eq!(from_zed.profile.as_deref(), Some("p1"));
 
         let env = |name: &str| (name == TARGET_ENV).then(|| "prod".to_string());
-        assert_eq!(select(&Settings::default(), &bundle, env).target.as_deref(), Some("prod"));
+        assert_eq!(
+            select(&Settings::default(), &bundle, env).target.as_deref(),
+            Some("prod")
+        );
 
-        let explicit = Settings { target: Some("dev".into()), ..Default::default() };
+        let explicit = Settings {
+            target: Some("dev".into()),
+            ..Default::default()
+        };
         assert_eq!(select(&explicit, &bundle, env).target.as_deref(), Some("dev"));
     }
 
     #[test]
     fn settings_accept_nested_and_camel_case() {
-        let s = Settings::from_json(&serde_json::json!({"databricks": {"target": "dev", "databricksPath": "/bin/db", "strict": true}}));
+        let s = Settings::from_json(
+            &serde_json::json!({"databricks": {"target": "dev", "databricksPath": "/bin/db", "strict": true}}),
+        );
         assert_eq!(s.target.as_deref(), Some("dev"));
         assert_eq!(s.databricks_path.as_deref(), Some("/bin/db"));
         assert!(s.strict);
@@ -267,6 +287,9 @@ mod tests {
         std::fs::write(dir.path().join("databricks.yml"), "bundle: {name: x}\n").unwrap();
         let file = dir.path().join("resources/job.yml");
         assert_eq!(find_bundle_root(&file).as_deref(), Some(dir.path()));
-        assert_eq!(find_bundle_root(&dir.path().join("databricks.yml")).as_deref(), Some(dir.path()));
+        assert_eq!(
+            find_bundle_root(&dir.path().join("databricks.yml")).as_deref(),
+            Some(dir.path())
+        );
     }
 }

@@ -39,11 +39,15 @@ class CliResult:
         try:
             return json.loads(self.stdout)
         except json.JSONDecodeError as err:
-            raise CliError(f"`databricks {' '.join(self.args)}` did not return JSON: {self.stderr.strip() or err}") from err
+            raise CliError(
+                f"`databricks {' '.join(self.args)}` did not return JSON: {self.stderr.strip() or err}"
+            ) from err
 
     def raise_for_status(self) -> CliResult:
         if not self.ok:
-            raise CliError(f"`databricks {' '.join(self.args)}` failed (exit {self.exit_code}):\n{truncate(self.stderr.strip())}")
+            raise CliError(
+                f"`databricks {' '.join(self.args)}` failed (exit {self.exit_code}):\n{truncate(self.stderr.strip())}"
+            )
         return self
 
 

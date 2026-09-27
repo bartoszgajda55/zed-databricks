@@ -1,0 +1,78 @@
+# Design notes
+
+How Zed, the Databricks CLI and Spark behave in the places that shaped this project, and the choices that follow. Versions checked: Zed `main` (September 2026), Databricks CLI v1.7.0–v1.17.0, yaml-language-server 1.24, PySpark 4.2, Databricks Connect 19.1, MCP Python SDK 2.x.
+
+## Zed
+
+### Extensions can't ship tasks or debug scenarios
+`ExtensionManifest` has no `tasks` field, and tasks can only be attached to languages an extension defines itself. Zed's YAML and Python languages are built in, so the task library, debug scenarios and project settings ship as `project-template/.zed/*` and are installed by `scripts/setup-project.sh`.
+
+### Schema injection goes through the extension's own language server
+`Extension::language_server_additional_workspace_configuration(own_server, target_server, worktree)` lets an extension merge configuration into *other* language servers, but only as the owner of a language server. `databricks-bundle-ls` is that server, and the extension uses the hook to add a `yaml.schemas` entry to `yaml-language-server`.
+
+yaml-language-server ranks schema sources and uses only the highest-priority match (settings over SchemaStore), so this mapping overrides SchemaStore's `databricks.yml` entry, which points at the latest published schema rather than the installed CLI's.
+
+### Schema globs must be absolute
+yaml-language-server prefixes every glob with `**/` and matches it against the whole file URI. A relative `resources/**/*.yml` would therefore also claim `src/main/resources/application.yml` in a JVM project. The extension builds absolute globs from the worktree path and each bundle root (the worktree root when it contains `databricks.yml`, otherwise the `bundleRoots` setting), escapes glob metacharacters, and writes Windows paths the way the server normalizes URIs (forward slashes, lower-case drive letter).
+
+### A language server can't decline to start
+When `language_server_command` returns an error, Zed shows "Failed to run …" in the status bar. `databricks-bundle-ls` is therefore always started for YAML, and does nothing for files outside a bundle: no CLI calls and no diagnostics. Users who want it off in a project list `"!databricks-bundle-ls"` in `languages.YAML.language_servers`.
+
+### Snippets
+Zed supports placeholders, nested placeholders, choices (`${1|a,b|}`) and `\$` escapes. It does not support transforms (`${1/regex/…/}`), and it doesn't copy a placeholder's default into bare mirrors (`$1`), so mirrors repeat the default.
+
+### Task variables
+Zed substitutes only `ZED_*` variables. Other `$VAR` and `${VAR:-default}` references reach the shell unchanged, so tasks can use shell defaults such as `${DATABRICKS_BUNDLE_TARGET:-<bundle default>}`.
+
+### Debugging needs no custom adapter
+With Databricks Connect, driver code runs in the local Python process, so Zed's built-in Debugpy adapter debugs it directly and Zed manages debugpy. The Databricks-specific part is session setup (compute, profile and the runtime globals), which `connect_runner.py` does before running the user's file with `runpy`. Code inside UDFs runs on the cluster, so breakpoints there are not hit.
+
+## Databricks CLI
+
+### `bundle validate` output
+- Diagnostics are text on stderr only; the CLI has no machine-readable diagnostics format. `--output json` switches stdout to the resolved configuration, which is printed even when validation fails. `databricks-bundle-ls` parses the text format from `libs/cmdio/render.go`, which is unchanged from v1.7.0 to v1.17.0.
+- The exit status is 1 when there are errors and 0 otherwise; warnings and recommendations alone don't fail validation.
+- CLI log lines (`Warn: [hostmetadata] …`) are interleaved with diagnostics and are skipped.
+- Some workspace errors carry no location, e.g. `notebook src/x.ipynb not found`. The server places them on the YAML line that names the file when exactly one line does.
+- The resolved configuration includes the current user's email and group memberships, so the MCP graph tool summarizes it instead of passing it through.
+- A target's cluster appears as `bundle.cluster_id` in the resolved configuration; the debug runner uses it before falling back to serverless.
+
+### Other behaviour
+- `bundle run` without a key prompts for a resource, which works in Zed's task terminal.
+- `bundle destroy` asks for confirmation unless given `--auto-approve`.
+- `clusters delete` terminates a cluster (it can be restarted); `clusters permanent-delete` removes it. `clusters start` and `clusters delete` wait for the final state (up to 20 minutes) unless given `--no-wait`.
+- There is no command that matches a local environment to a cluster's runtime (`databricks environments` manages workspace base environments), so the task library doesn't pretend to have one.
+- Cluster policies are not a bundle resource type. The policy snippet is a cluster governed by `policy_id`, plus a `lookup: cluster_policy` variable.
+
+### Token scopes
+A workspace token with only the `bundle` scopes can't validate a realistic bundle: validation also needs `workspace` (synced paths and deployment state). Deploying needs the scope of each resource API (`jobs`, `pipelines`, …). The MCP server's cluster, catalog and secret tools need `clusters`, `unity-catalog` and `secrets`.
+
+## Spark and Python
+
+### OSS Spark vs Databricks pipelines
+OSS `pyspark.pipelines` (4.2) provides `table`, `materialized_view`, `temporary_view`, `append_flow`, `create_streaming_table`, `create_sink` and `create_auto_cdc_flow` with `stored_as_scd_type=1` only. It does not have the `expect*` decorators, Auto Loader (`cloudFiles`) or `read_files`, or SQL `CONSTRAINT … EXPECT`, `AUTO CDC INTO` and `CREATE OR REFRESH`.
+
+Plain `CREATE STREAMING TABLE` / `CREATE MATERIALIZED VIEW` works on both, so the SQL snippets use it, the CDC snippets default to SCD type 1, and snippets that need Databricks are labelled "Databricks only". The tests run the portable snippets through `spark-pipelines dry-run`.
+
+### Type stubs
+PySpark ships inline types, so for Databricks pipeline code basedpyright reports `expect*` as unknown, rejects `stored_as_scd_type=2`, and flags `spark`, `dbutils` and `display` as undefined. The fix is a *partial* stub package, `typings/pyspark-stubs` with `py.typed` containing `partial`: basedpyright finds it on the default `stubPath`, and it overrides only `pyspark.pipelines` while the rest of `pyspark` comes from the installed package. `__builtins__.pyi` declares the runtime globals, re-exporting `dbutils`/`display` from `databricks.sdk.runtime` so they are fully typed when the SDK is installed. Legacy `import dlt` code is best served by Databricks' `databricks-dlt` package; a local stub-only module produces "could not be resolved from source" errors.
+
+### Ruff
+Ruff's default rules include F821 (undefined name), which flags the runtime globals. In `ruff server`'s inline configuration (`initialization_options.settings.configuration`) only the top-level `builtins` key takes effect; `lint.builtins` is ignored there, although the CLI accepts both.
+
+### Databricks Connect
+Databricks Connect 19.1 requires Python 3.12 and replaces `pyspark`, so it can't share an environment with OSS PySpark (the repository's live debugger test takes its interpreter from `DATABRICKS_CONNECT_PYTHON`). After `DatabricksSession.builder.profile(p).serverless(True)` (or `.clusterId(id)`), `SparkSession.builder.getOrCreate()` returns the same session. The SDK's `dbutils` differs from the runtime's: for example, `dbutils.fs.ls("/Volumes")` needs a volume path.
+
+## MCP server
+
+- **Errors:** exceptions other than `ToolError` reach clients only as "Error executing tool X", so anticipated failures subclass it (`CliError`).
+- **Confirmation for cluster start/stop:** since the 2026-07-28 protocol, elicitation travels in an input-required result and the client retries the call with the answer, so `ctx.elicit()` has no back-channel. The SDK's portable pattern is a resolver parameter, `Annotated[ElicitationResult[T], Resolve(fn)]`, whose resolver returns `Elicit(message, Model)`; the framework picks the transport for the negotiated protocol, and the parameter doesn't appear in the tool's input schema, so the agent can't answer for the user. A resolver can also return a plain value, which covers the no-op and job-cluster cases without asking. Clients without elicitation can't ask at all, so the tools refuse unless the user opts in with `DATABRICKS_DEV_MCP_ALLOW_AGENT_CONFIRM=1`.
+- **Registry:** `server.json` descriptions are limited to 100 characters, and PyPI ownership is verified by an `mcp-name: <server name>` line in the package README.
+- **Tested against a real workspace:** validate, deploy, run and status tools on throwaway bundles; cluster start/stop on a throwaway single-node cluster, covering a declined confirmation (nothing changed), stops from `PENDING` and `RUNNING`, a start through to `RUNNING`, and repeated calls as no-ops.
+
+## Releases
+
+- `astral-sh/setup-uv` publishes no floating major tag (`@v10` fails), so it's pinned to a full version.
+- The Python package normalizes `0.2.0-rc.1` to `0.2.0rc1`. Pre-releases are never published to PyPI or the MCP registry, so the mismatch with `server.json` doesn't matter.
+- `huacnlee/zed-extension-action` only updates an extension already listed in `zed-industries/extensions`; the first submission is a manual pull request from a public repository.
+- The extension downloads only full (non-pre-release) GitHub releases of `databricks-bundle-ls`.
