@@ -109,14 +109,15 @@ For Claude Code, Codex, Cursor and the other agents Databricks supports, install
 databricks aitools install
 ```
 
-`aitools` doesn't target Zed's own agent yet. Zed loads skills from `~/.agents/skills/` (or `.agents/skills/` in a project), and Databricks' skills already use the standard `SKILL.md` format it reads. Until `aitools` supports Zed, copy them there, and repeat to update:
+`aitools` doesn't list Zed's own agent yet, but Databricks' skills already use the standard `SKILL.md` format Zed reads, and Zed loads them from `~/.agents/skills/` (or `.agents/skills/` in a project). Write them there with the CLI (v1.6.0 or later), and run it again to update:
 
 ```sh
-git clone --depth 1 https://github.com/databricks/databricks-agent-skills /tmp/databricks-agent-skills
-mkdir -p ~/.agents/skills && cp -R /tmp/databricks-agent-skills/skills/* ~/.agents/skills/
+databricks aitools install --path ~/.agents/skills
 ```
 
-This copies the latest skills, so keep the Databricks CLI up to date too. For agents working with data rather than code, see Databricks' [managed MCP servers](https://docs.databricks.com/aws/en/agents/mcp-tools/managed-mcp).
+In PowerShell on Windows, use `--path $HOME\.agents\skills`.
+
+For agents working with data rather than code, see Databricks' [managed MCP servers](https://docs.databricks.com/aws/en/agents/mcp-tools/managed-mcp).
 
 ### Snippets
 
