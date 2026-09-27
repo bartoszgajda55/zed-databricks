@@ -76,7 +76,7 @@ Databricks Connect 19.1 requires Python 3.12 and replaces `pyspark`, so it can't
 
 ## Agent tooling
 
-The project doesn't ship an MCP server. Databricks' official route for coding agents is its skills (`databricks aitools install`), which teach agents to drive the `databricks` CLI, and its managed MCP servers cover agents working with data. A CLI-wrapping MCP server with bundle tools and user-confirmed cluster start/stop was built and tested, then removed to avoid maintaining a parallel product; it is preserved at the `mcp-server-final` tag. One finding from it that applies to any Python MCP server: since the 2026-07-28 protocol, `ctx.elicit()` has no back-channel, and confirmation needs a resolver parameter (`Annotated[ElicitationResult[T], Resolve(fn)]` returning `Elicit(...)`).
+The project doesn't ship an MCP server. Databricks' official route for coding agents is its skills (`databricks aitools install`), which teach agents to drive the `databricks` CLI, and its managed MCP servers cover agents working with data. A CLI-wrapping MCP server with bundle tools and user-confirmed cluster start/stop was prototyped before the first release and removed to avoid maintaining a parallel product; it was never part of a release. Its code remains in the history (last in commit `f90958e`, under `servers/databricks-dev-mcp`). One finding from it that applies to any Python MCP server: since the 2026-07-28 protocol, `ctx.elicit()` has no back-channel, and confirmation needs a resolver parameter (`Annotated[ElicitationResult[T], Resolve(fn)]` returning `Elicit(...)`).
 
 ## Releases
 
