@@ -3,7 +3,7 @@ name = "Databricks"
 version = "0.2.2"
 schema_version = 1
 authors = ["Bartosz Gajda <bartek.g55@gmail.com>"]
-description = "Databricks Declarative Automation Bundles: schema completion and validation diagnostics for bundle YAML, plus snippets for bundles and Spark Declarative Pipelines. Community project, not affiliated with Databricks."
+description = "Databricks support: bundle completion, validation and snippets."
 repository = "https://github.com/bartoszgajda55/zed-databricks"
 
 snippets = ["./snippets/yaml.json", "./snippets/python.json", "./snippets/sql.json"]

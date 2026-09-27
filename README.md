@@ -188,6 +188,8 @@ Open them with `task: spawn`. Tasks that work on the bundle run through `.zed/da
 
 ### Debugging with Databricks Connect
 
+![Stopped at a breakpoint with the Databricks Connect result shown inline, next to the debug scenario picker](docs/images/debugger.png)
+
 Press F4 and choose **Databricks Connect: debug current file**, or **debug pytest (current file)**. Driver-side code runs locally under debugpy, so breakpoints, stepping and the debug console work as usual. Spark operations run remotely. Code inside UDFs runs on the cluster, so breakpoints there won't stop.
 
 `connect_runner.py` creates the Databricks Connect session before running your file. It also provides `spark`, `dbutils` and `display`, so notebook-style scripts run unchanged, and `SparkSession.builder.getOrCreate()` returns the same session.
