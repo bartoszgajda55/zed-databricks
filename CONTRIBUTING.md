@@ -2,6 +2,14 @@
 
 Thanks for helping. Bug reports, snippet ideas and pull requests are all welcome. For anything larger than a fix, please open an issue first so we can agree on the approach.
 
+## How to contribute
+
+1. Fork the repository, create a branch in your fork, and open a pull request against `main`. Only the maintainer can push to this repository, and every change to `main` lands through a pull request.
+2. CI must pass before merging. The required checks are `python`, `rust` and `bundle-ls` on Ubuntu, macOS and Windows; [Checks](#checks) runs the same things locally.
+3. If this is your first contribution, your workflows wait until the maintainer approves them. That is a GitHub safeguard for forks, not a judgement on the change.
+4. Pull requests are squash-merged, and the pull request title becomes the commit subject, so give it a short, descriptive title.
+5. Add user-visible changes under `## [Unreleased]` in `CHANGELOG.md` (see [Conventions](#conventions)).
+
 ## Layout
 
 | Path | What it is |
