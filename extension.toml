@@ -1,6 +1,6 @@
 id = "databricks"
 name = "Databricks"
-version = "0.2.1"
+version = "0.2.2"
 schema_version = 1
 authors = ["Bartosz Gajda <bartek.g55@gmail.com>"]
 description = "Databricks Declarative Automation Bundles: schema completion and validation diagnostics for bundle YAML, plus snippets for bundles and Spark Declarative Pipelines. Community project, not affiliated with Databricks."

@@ -4,6 +4,8 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-27
+
 ### Added
 - Tasks for newer Databricks CLI commands: `environments setup-local` (a `.venv` matching the bundle target's cluster or serverless, including `databricks-connect`; CLI v1.9.0+), `bundle open`, and `pipelines dry-run` / `pipelines logs` on Databricks. The debugger setup now uses `environments setup-local` instead of a manual `databricks-connect` install.
 
