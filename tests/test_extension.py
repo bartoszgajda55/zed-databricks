@@ -161,8 +161,11 @@ def test_python_snippet_is_valid_python(language, snippet):
 
 
 def zed_substitute(command):
-    """Mimic Zed task variable substitution for ZED_* variables (others are left to the shell)."""
-    return re.sub(r"\$\{?(ZED_[A-Z_]+)(?::[^}]*)?\}?", "/tmp/zed_value", command)
+    """Mimic Zed's task variable substitution (shellexpand 3; see docs/design-notes.md): ZED_*
+    variables are replaced, and any `${NAME:-default}` is resolved to its default before the
+    shell runs, even for variables the environment sets. Plain `$NAME` and `$(…)` pass through."""
+    command = re.sub(r"\$\{(ZED_[A-Z_]+)(?::-?[^}]*)?\}|\$(ZED_[A-Z_]+)", "/tmp/zed_value", command)
+    return re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}", r"\1", command)
 
 
 def test_tasks_are_valid_and_shell_parsable():
@@ -175,6 +178,9 @@ def test_tasks_are_valid_and_shell_parsable():
         # Zed pastes variables into the command text before the shell parses it, so editor text
         # must reach the shell through `env` (expanded as data), never inline.
         assert "ZED_SELECTED_TEXT" not in task["command"], task["label"]
+        # Zed resolves `${VAR:-default}` to the default itself, before the shell sees the
+        # project's environment; use `$(printenv VAR || echo default)` instead.
+        assert not re.search(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-", task["command"]), task["label"]
 
 
 def test_selected_text_reaches_the_cli_as_one_literal_argument(tmp_path):
@@ -203,6 +209,24 @@ def test_task_commands_exist_in_the_installed_cli():
         result = subprocess.run(["databricks", *words, "--help"], capture_output=True, text=True)
         # Unknown subcommands fall back to the parent's help; the usage line names the real command.
         assert f"databricks {' '.join(words)}" in result.stdout, (words, result.stdout[:300])
+
+
+def test_task_banner_and_defaults_reflect_the_environment():
+    tasks = {t["label"]: t for t in json.loads((TEMPLATE / "tasks.json").read_text())}
+
+    def run(label, env):
+        banner = zed_substitute(tasks[label]["command"]).split(" && ")[0]
+        result = subprocess.run(["sh", "-c", banner], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True)
+        return result.stdout.strip()
+
+    set_env = {"DATABRICKS_BUNDLE_TARGET": "staging", "DATABRICKS_CONFIG_PROFILE": "turbines_dev"}
+    assert run("databricks: bundle validate", set_env) == "▶ bundle target: staging | profile: turbines_dev"
+    assert run("databricks: bundle validate", {}) == "▶ bundle target: <bundle default> | profile: <DEFAULT>"
+    serverless = zed_substitute(tasks["databricks: environments setup-local (serverless)"]["command"])
+    version = serverless.split("--serverless-version ")[1]
+    for env, expected in (({"DATABRICKS_SERVERLESS_VERSION": "6"}, "6"), ({}, "5")):
+        out = subprocess.run(["sh", "-c", f"echo {version}"], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True)
+        assert out.stdout.strip() == expected
 
 
 def test_bundle_tasks_never_auto_approve_and_show_target():

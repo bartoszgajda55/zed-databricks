@@ -16,6 +16,7 @@ All notable changes are listed here. One version covers the extension and `datab
 - Release archives carry build provenance attestations (`gh attestation verify`).
 
 ### Fixed
+- Task banners always printed `<bundle default>` / `<DEFAULT>`, and `DATABRICKS_SERVERLESS_VERSION` never overrode the serverless version: Zed resolves `${VAR:-default}` to the default before the shell sees the project's environment. The tasks use `$(printenv VAR || echo default)` instead.
 - A `bundle validate` failure without an error the server could parse (for example a crash) showed a clean bundle; it is now reported on `databricks.yml` with the end of the CLI's output.
 - A symbolic link loop inside a bundle could hang validation.
 - Without a Databricks CLI, the extension retried the schema lookup on every configuration request; old generated schema files are now removed.
