@@ -5,14 +5,12 @@
     scripts/release.py bump X.Y.Z             # rewrite every manifest, lockfiles and the changelog, then commit and tag
     scripts/release.py notes X.Y.Z            # print the version's changelog entry (GitHub release notes)
 
-The extension, databricks-bundle-ls and the databricks-dev MCP server are released together
-from one `vX.Y.Z` tag (see .github/workflows/release.yml).
+The extension and databricks-bundle-ls are released together from one `vX.Y.Z` tag (see .github/workflows/release.yml).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import subprocess
 import sys
@@ -27,9 +25,7 @@ TOML_MANIFESTS = {
     "extension.toml": ("version",),
     "Cargo.toml": ("package", "version"),
     "servers/databricks-bundle-ls/Cargo.toml": ("package", "version"),
-    "servers/databricks-dev-mcp/pyproject.toml": ("project", "version"),
 }
-SERVER_JSON = "servers/databricks-dev-mcp/server.json"
 CHANGELOG = ROOT / "CHANGELOG.md"
 UNRELEASED = "Unreleased"
 
@@ -71,10 +67,6 @@ def versions() -> dict[str, str]:
         for key in keys:
             value = value[key]
         found[path] = value
-    server = json.loads((ROOT / SERVER_JSON).read_text())
-    found[SERVER_JSON] = server["version"]
-    for package in server["packages"]:
-        found[f"{SERVER_JSON} ({package['identifier']})"] = package["version"]
     return found
 
 
@@ -118,12 +110,6 @@ def bump(version: str, commit: bool) -> int:
         return 1
     for path, keys in TOML_MANIFESTS.items():
         _replace_toml_version(ROOT / path, keys[0] if len(keys) > 1 else None, version)
-    server_path = ROOT / SERVER_JSON
-    server = json.loads(server_path.read_text())
-    server["version"] = version
-    for package in server["packages"]:
-        package["version"] = version
-    server_path.write_text(json.dumps(server, indent=2) + "\n")
     if not is_prerelease(version):
         CHANGELOG.write_text(release_changelog(CHANGELOG.read_text(), version, date.today()))
 
@@ -132,7 +118,6 @@ def bump(version: str, commit: bool) -> int:
     subprocess.run(
         ["cargo", "update", "--workspace", "--offline"], cwd=ROOT / "servers/databricks-bundle-ls", check=True
     )
-    subprocess.run(["uv", "lock", "--offline"], cwd=ROOT, check=True)
     if check(None):
         return 1
     if commit:

@@ -8,7 +8,6 @@ Thanks for helping. Bug reports, snippet ideas and pull requests are all welcome
 | --- | --- |
 | `src/`, `extension.toml`, `snippets/` | The Zed extension, compiled to `wasm32-wasip2` |
 | `servers/databricks-bundle-ls/` | The diagnostics language server (native Rust, its own Cargo workspace) |
-| `servers/databricks-dev-mcp/` | The MCP server (Python, published to PyPI and the MCP registry) |
 | `project-template/` | Files `scripts/setup-project.sh` copies into projects, plus CI/CD templates |
 | `tests/` | Python tests for snippets, templates, stubs, local Spark, the debugger runner and releases |
 | `docs/design-notes.md` | How Zed, the Databricks CLI and Spark behave, and the design choices that follow |
@@ -36,10 +35,7 @@ cargo test && cargo build --release --target wasm32-wasip2
 (cd servers/databricks-bundle-ls && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test)
 ```
 
-Tests use a fake `databricks` CLI, so they need no workspace. Some tests also exercise the real thing when you opt in:
-
-- `DATABRICKS_LIVE_PROFILE=<profile>` runs read-only checks against a workspace.
-- `DATABRICKS_CONNECT_PYTHON=<python>` (an environment with `databricks-connect`, which needs its own venv because it replaces `pyspark`) together with `DATABRICKS_LIVE_PROFILE` runs the debugger against real compute.
+Tests use a fake `databricks` CLI and a fake Databricks Connect, so they need no workspace. To also debug against real compute, set `DATABRICKS_LIVE_PROFILE=<profile>` and `DATABRICKS_CONNECT_PYTHON=<python>`, an interpreter from a separate venv with `databricks-connect` (it replaces `pyspark`, so it can't share the dev environment).
 
 ## Conventions
 
@@ -57,4 +53,4 @@ uv run scripts/release.py bump 0.3.0   # rewrites manifests and lockfiles, dates
 git push origin main v0.3.0
 ```
 
-The tag starts `.github/workflows/release.yml`: it checks the tag against every manifest and the changelog, runs CI, builds `databricks-bundle-ls` for 5 platforms and the MCP wheel, smoke-tests both, and creates the GitHub release with the changelog entry as notes and `SHA256SUMS`. Publishing to PyPI, the MCP registry and the Zed extension registry is switched on per target by repository variables; the workflow header lists the one-time setup. Pre-release tags (`v0.3.0-rc.1`) stop after a GitHub pre-release.
+The tag starts `.github/workflows/release.yml`: it checks the tag against every manifest and the changelog, runs CI, builds and smoke-tests `databricks-bundle-ls` for 5 platforms, and creates the GitHub release with the changelog entry as notes and `SHA256SUMS`. Once the extension is listed, setting `PUBLISH_ZED_EXTENSION` makes each release open the update PR to the Zed extension registry; the workflow header lists the one-time setup. Pre-release tags (`v0.3.0-rc.1`) stop after a GitHub pre-release.

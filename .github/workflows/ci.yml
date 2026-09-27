@@ -24,7 +24,7 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
           uv run basedpyright
-      # Snippets, templates, stubs, local Spark integration and the MCP server (fake CLI).
+      # Snippets, templates, stubs, local Spark integration, the debugger runner and releases.
       - run: uv run pytest
 
   rust:

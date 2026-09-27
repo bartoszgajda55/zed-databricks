@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes are listed here. One version covers the extension, `databricks-bundle-ls` and the `databricks-dev` MCP server. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
+All notable changes are listed here. One version covers the extension and `databricks-bundle-ls`. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
@@ -16,8 +16,3 @@ First public release.
 - Debug scenarios that run the current file or its tests under debugpy against Databricks compute through Databricks Connect.
 - Partial type stubs for the Databricks-only `pyspark.pipelines` API, and runtime globals (`spark`, `dbutils`, `display`) for basedpyright and ruff.
 - CI/CD templates for GitHub Actions and Azure DevOps.
-
-### MCP server (`databricks-dev-mcp`)
-- Bundle tools: validate, explain the resource graph, deploy (production targets need explicit permission) and run.
-- Workspace tools: job and pipeline run status, run logs, Unity Catalog lookup, secret scope and key names.
-- Cluster tools: list, status, and start/stop confirmed by the user through MCP elicitation.

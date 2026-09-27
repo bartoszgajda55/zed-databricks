@@ -4,7 +4,9 @@
 
 Zed tooling for Databricks development: **Declarative Automation Bundles** (DABs, formerly Databricks Asset Bundles), **Spark Declarative Pipelines** (SDP, formerly Delta Live Tables) and **PySpark**.
 
-Zed has no webview or panel API, so the editor gets static knowledge (schema, diagnostics, type stubs, snippets), and the agent gets workspace operations through an MCP server. Every piece wraps the `databricks` CLI.
+Zed has no webview or panel API, so instead of a workspace browser you get editor knowledge (schema, diagnostics, type stubs, snippets) plus tasks and debugging. Every piece wraps the `databricks` CLI, so authentication, profiles and targets behave as they do in your terminal.
+
+> A community project, not affiliated with or endorsed by Databricks, Inc. Databricks is a trademark of Databricks, Inc.
 
 ## What's included
 
@@ -17,7 +19,6 @@ Zed has no webview or panel API, so the editor gets static knowledge (schema, di
 | Ruff | `.zed/settings.json` | Format on save, organized imports, and no F821 errors on `spark` / `dbutils` / `display`. |
 | Task library | `.zed/tasks.json` | `bundle validate / plan / deploy / run / summary / destroy`, `auth login / profiles / describe`, `spark-pipelines dry-run / run`, `pytest`. |
 | Debugging | `.zed/debug.json` + `.zed/databricks/connect_runner.py` | Breakpoints in driver-side PySpark with Zed's Debugpy adapter, while Spark runs on the bundle target's cluster or on serverless through Databricks Connect. |
-| Agent tools | [`databricks-dev` MCP server](servers/databricks-dev-mcp) | Validate, deploy and run bundles; explain the bundle graph; run status and logs; Unity Catalog lookup; list, inspect, start and stop clusters (start/stop confirmed by the user); secret scope names. |
 | CI/CD templates | `project-template/ci/` | GitHub Actions and Azure DevOps pipelines: validate on PR, deploy to staging, gated prod. |
 
 ## Install
@@ -32,7 +33,6 @@ Prerequisite: the [Databricks CLI](https://docs.databricks.com/dev-tools/cli/ins
    scripts/setup-project.sh /path/to/your/project
    ```
    The script never overwrites existing files. When a file already exists, it writes the template alongside it (for example `databricks.tasks.json`) for you to merge by hand.
-3. **Agent tools (optional).** Add the MCP server to Zed's `context_servers`. See [its README](servers/databricks-dev-mcp/README.md).
 
 ## Usage
 
@@ -93,6 +93,16 @@ It chooses compute and profile in this order:
 Install `databricks-connect` in the project's Python environment. Its version must match your compute (for example, serverless or DBR 17 → 17.x).
 
 The same runner is available without the debugger as the task **databricks-connect: run current file**.
+
+### AI agents
+
+This project doesn't ship agent tools. Databricks' official route for coding agents is its skills, which teach an agent to use the `databricks` CLI (bundles, jobs, pipelines, SQL and more):
+
+```sh
+databricks aitools install
+```
+
+The skills support Claude Code, Codex, Cursor and other agents. Claude Code and Codex also run inside Zed's agent panel. For agents working with data rather than code, see Databricks' [managed MCP servers](https://docs.databricks.com/aws/en/agents/mcp-tools/managed-mcp).
 
 ### Snippets
 

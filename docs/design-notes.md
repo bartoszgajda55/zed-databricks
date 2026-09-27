@@ -1,6 +1,6 @@
 # Design notes
 
-How Zed, the Databricks CLI and Spark behave in the places that shaped this project, and the choices that follow. Versions checked: Zed `main` (September 2026), Databricks CLI v1.7.0–v1.17.0, yaml-language-server 1.24, PySpark 4.2, Databricks Connect 19.1, MCP Python SDK 2.x.
+How Zed, the Databricks CLI and Spark behave in the places that shaped this project, and the choices that follow. Versions checked: Zed `main` (September 2026), Databricks CLI v1.7.0–v1.17.0, yaml-language-server 1.24, PySpark 4.2, Databricks Connect 19.1.
 
 ## Zed
 
@@ -34,7 +34,7 @@ With Databricks Connect, driver code runs in the local Python process, so Zed's 
 - The exit status is 1 when there are errors and 0 otherwise; warnings and recommendations alone don't fail validation.
 - CLI log lines (`Warn: [hostmetadata] …`) are interleaved with diagnostics and are skipped.
 - Some workspace errors carry no location, e.g. `notebook src/x.ipynb not found`. The server places them on the YAML line that names the file when exactly one line does.
-- The resolved configuration includes the current user's email and group memberships, so the MCP graph tool summarizes it instead of passing it through.
+- The resolved configuration includes the current user's email and group memberships; treat it as personal data when logging or sharing it.
 - A target's cluster appears as `bundle.cluster_id` in the resolved configuration; the debug runner uses it before falling back to serverless.
 
 ### Other behaviour
@@ -45,7 +45,7 @@ With Databricks Connect, driver code runs in the local Python process, so Zed's 
 - Cluster policies are not a bundle resource type. The policy snippet is a cluster governed by `policy_id`, plus a `lookup: cluster_policy` variable.
 
 ### Token scopes
-A workspace token with only the `bundle` scopes can't validate a realistic bundle: validation also needs `workspace` (synced paths and deployment state). Deploying needs the scope of each resource API (`jobs`, `pipelines`, …). The MCP server's cluster, catalog and secret tools need `clusters`, `unity-catalog` and `secrets`.
+A workspace token with only the `bundle` scopes can't validate a realistic bundle: validation also needs `workspace` (synced paths and deployment state). Deploying needs the scope of each resource API (`jobs`, `pipelines`, …).
 
 ## Spark and Python
 
@@ -63,16 +63,12 @@ Ruff's default rules include F821 (undefined name), which flags the runtime glob
 ### Databricks Connect
 Databricks Connect 19.1 requires Python 3.12 and replaces `pyspark`, so it can't share an environment with OSS PySpark (the repository's live debugger test takes its interpreter from `DATABRICKS_CONNECT_PYTHON`). After `DatabricksSession.builder.profile(p).serverless(True)` (or `.clusterId(id)`), `SparkSession.builder.getOrCreate()` returns the same session. The SDK's `dbutils` differs from the runtime's: for example, `dbutils.fs.ls("/Volumes")` needs a volume path.
 
-## MCP server
+## Agent tooling
 
-- **Errors:** exceptions other than `ToolError` reach clients only as "Error executing tool X", so anticipated failures subclass it (`CliError`).
-- **Confirmation for cluster start/stop:** since the 2026-07-28 protocol, elicitation travels in an input-required result and the client retries the call with the answer, so `ctx.elicit()` has no back-channel. The SDK's portable pattern is a resolver parameter, `Annotated[ElicitationResult[T], Resolve(fn)]`, whose resolver returns `Elicit(message, Model)`; the framework picks the transport for the negotiated protocol, and the parameter doesn't appear in the tool's input schema, so the agent can't answer for the user. A resolver can also return a plain value, which covers the no-op and job-cluster cases without asking. Clients without elicitation can't ask at all, so the tools refuse unless the user opts in with `DATABRICKS_DEV_MCP_ALLOW_AGENT_CONFIRM=1`.
-- **Registry:** `server.json` descriptions are limited to 100 characters, and PyPI ownership is verified by an `mcp-name: <server name>` line in the package README.
-- **Tested against a real workspace:** validate, deploy, run and status tools on throwaway bundles; cluster start/stop on a throwaway single-node cluster, covering a declined confirmation (nothing changed), stops from `PENDING` and `RUNNING`, a start through to `RUNNING`, and repeated calls as no-ops.
+The project doesn't ship an MCP server. Databricks' official route for coding agents is its skills (`databricks aitools install`), which teach agents to drive the `databricks` CLI, and its managed MCP servers cover agents working with data. A CLI-wrapping MCP server with bundle tools and user-confirmed cluster start/stop was built and tested, then removed to avoid maintaining a parallel product; it is preserved at the `mcp-server-final` tag. One finding from it that applies to any Python MCP server: since the 2026-07-28 protocol, `ctx.elicit()` has no back-channel, and confirmation needs a resolver parameter (`Annotated[ElicitationResult[T], Resolve(fn)]` returning `Elicit(...)`).
 
 ## Releases
 
 - `astral-sh/setup-uv` publishes no floating major tag (`@v10` fails), so it's pinned to a full version.
-- The Python package normalizes `0.2.0-rc.1` to `0.2.0rc1`. Pre-releases are never published to PyPI or the MCP registry, so the mismatch with `server.json` doesn't matter.
 - `huacnlee/zed-extension-action` only updates an extension already listed in `zed-industries/extensions`; the first submission is a manual pull request from a public repository.
 - The extension downloads only full (non-pre-release) GitHub releases of `databricks-bundle-ls`.

@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in the extension, databricks-bundle-ls, the MCP server or the templates doesn't work
+description: Something in the extension, databricks-bundle-ls or the project templates doesn't work
 labels: [bug]
 body:
   - type: dropdown
@@ -9,7 +9,6 @@ body:
       options:
         - Extension (schema, snippets)
         - databricks-bundle-ls (diagnostics)
-        - databricks-dev MCP server
         - Project templates (tasks, debugging, stubs, CI)
     validations:
       required: true

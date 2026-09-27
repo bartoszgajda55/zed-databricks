@@ -14,8 +14,6 @@ dev = [
     "regex>=2024.11",
     "pyspark[connect]>=4.1",
     "chispa>=0.10",
-    "databricks-dev-mcp",
-    "pytest-asyncio>=1.4",
     "basedpyright>=1.40.1",
     "ruff>=0.16.8",
     "databricks-sdk>=0.141.0",
@@ -26,17 +24,8 @@ dev = [
 package = false
 default-groups = ["dev"]
 
-[tool.uv.sources]
-databricks-dev-mcp = { workspace = true }
-
-[tool.uv.workspace]
-members = [
-    "servers/databricks-dev-mcp",
-]
-
 [tool.pytest.ini_options]
-testpaths = ["tests", "servers/databricks-dev-mcp/tests"]
-asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
@@ -47,17 +36,15 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PYI"]
 ignore = ["E501"]  # the formatter owns line length
 
 [tool.ruff.lint.per-file-ignores]
-# Pipeline source in a test bundle uses the Databricks runtime global `spark`.
-"servers/databricks-dev-mcp/tests/fixtures/**" = ["F821"]
 # Stubs are copied into user projects, which may run Python < 3.12 (no `type` statement).
 "project-template/typings/**" = ["UP040"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["databricks_dev_mcp", "dap_client", "runner_module", "zed_snippet"]
+known-first-party = ["dap_client", "runner_module", "zed_snippet"]
 
 [tool.basedpyright]
 typeCheckingMode = "standard"
 pythonVersion = "3.12"
-include = ["scripts", "tests", "servers/databricks-dev-mcp", "project-template/.zed"]
+include = ["scripts", "tests", "project-template/.zed"]
 exclude = ["**/fixtures", "**/.venv"]
 extraPaths = ["tests"]
