@@ -181,6 +181,9 @@ def test_tasks_are_valid_and_shell_parsable():
         # Zed resolves `${VAR:-default}` to the default itself, before the shell sees the
         # project's environment; use `$(printenv VAR || echo default)` instead.
         assert not re.search(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-", task["command"]), task["label"]
+        # Remote and WSL projects pass the command through another quoting layer (wsl.exe on
+        # Windows) that breaks on single quotes; double quotes survive it.
+        assert "'" not in task["command"], task["label"]
 
 
 def test_selected_text_reaches_the_cli_as_one_literal_argument(tmp_path):
