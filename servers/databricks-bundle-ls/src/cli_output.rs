@@ -58,7 +58,7 @@ fn parse_header(line: &str) -> Option<(Severity, &str)> {
 }
 
 /// CLI log output (`Warn: [hostmetadata] …`) is interleaved with diagnostics on stderr.
-fn is_log_line(line: &str) -> bool {
+pub fn is_log_line(line: &str) -> bool {
     ["Trace: ", "Debug: ", "Info: ", "Warn: "]
         .iter()
         .any(|prefix| line.starts_with(prefix))

@@ -8,13 +8,13 @@ use std::time::Duration;
 use serde::Deserialize;
 use wait_timeout::ChildExt;
 
-use crate::cli_output::{self, CliDiagnostic};
+use crate::cli_output::{self, CliDiagnostic, Severity};
 
 pub const TARGET_ENV: &str = "DATABRICKS_BUNDLE_TARGET";
 pub const PROFILE_ENV: &str = "DATABRICKS_CONFIG_PROFILE";
 
-/// Server settings, from `initializationOptions` or `workspace/didChangeConfiguration`.
-/// In Zed: `"lsp": { "databricks-bundle-ls": { "initialization_options": { … } } }`.
+/// Server settings: `initializationOptions`, overlaid by `workspace/didChangeConfiguration`.
+/// In Zed: `"lsp": { "databricks-bundle-ls": { "settings": { … } } }` (or `initialization_options`).
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -24,14 +24,42 @@ pub struct Settings {
     /// Pass `--strict` so warnings fail validation.
     pub strict: bool,
     pub timeout_seconds: Option<u64>,
+    /// Validate when a bundle file is first opened (default), or only on save.
+    pub validate_on_open: Option<bool>,
+    /// Used by the extension to scope the bundle schema; accepted here so it isn't an error.
+    pub bundle_roots: Option<Vec<String>>,
 }
 
 impl Settings {
     /// Accepts both the bare settings object and one nested under a `databricks` key.
-    pub fn from_json(value: &serde_json::Value) -> Self {
-        let value = value.get("databricks").unwrap_or(value);
-        serde_json::from_value(value.clone()).unwrap_or_default()
+    pub fn from_json(value: &serde_json::Value) -> Result<Self, String> {
+        match unnest(value) {
+            serde_json::Value::Null => Ok(Self::default()),
+            value => serde_json::from_value(value.clone())
+                .map_err(|err| format!("invalid databricks-bundle-ls settings ({err}); using the previous ones")),
+        }
     }
+
+    pub fn validates_on_open(&self) -> bool {
+        self.validate_on_open.unwrap_or(true)
+    }
+}
+
+fn unnest(value: &serde_json::Value) -> &serde_json::Value {
+    value.get("databricks").unwrap_or(value)
+}
+
+/// `overlay`'s keys over `base`'s, so configuration changes keep initialization options (such
+/// as the `databricksPath` the extension resolves) that they don't mention.
+pub fn merge(base: &serde_json::Value, overlay: &serde_json::Value) -> serde_json::Value {
+    let mut merged = match unnest(base) {
+        serde_json::Value::Object(map) => map.clone(),
+        _ => serde_json::Map::new(),
+    };
+    if let serde_json::Value::Object(map) = unnest(overlay) {
+        merged.extend(map.iter().map(|(key, value)| (key.clone(), value.clone())));
+    }
+    serde_json::Value::Object(merged)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -207,19 +235,38 @@ pub fn run(settings: &Settings, bundle_root: &Path) -> Result<Outcome, String> {
     });
 
     let timeout = Duration::from_secs(settings.timeout_seconds.unwrap_or(120));
-    if child.wait_timeout(timeout).map_err(|err| err.to_string())?.is_none() {
+    let Some(status) = child.wait_timeout(timeout).map_err(|err| err.to_string())? else {
         let _ = child.kill();
         let _ = child.wait();
         return Err(format!(
             "`{program} bundle validate` timed out after {}s",
             timeout.as_secs()
         ));
-    }
+    };
     let stderr = reader.join().unwrap_or_default();
-    Ok(Outcome {
-        diagnostics: cli_output::parse(&stderr),
-        selection,
-    })
+    let mut diagnostics = cli_output::parse(&stderr);
+    if !status.success() && !diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        diagnostics.push(unparsed_failure(status.code(), &stderr));
+    }
+    Ok(Outcome { diagnostics, selection })
+}
+
+/// The CLI failed without an error we could parse (a crash, or output in an unexpected format):
+/// report it rather than showing a clean bundle.
+fn unparsed_failure(code: Option<i32>, stderr: &str) -> CliDiagnostic {
+    const TAIL: usize = 20;
+    let lines: Vec<&str> = stderr
+        .lines()
+        .filter(|line| !line.trim().is_empty() && !cli_output::is_log_line(line))
+        .collect();
+    let exit = code.map_or_else(|| "was terminated".to_string(), |code| format!("exited with {code}"));
+    CliDiagnostic {
+        severity: Severity::Error,
+        summary: format!("`databricks bundle validate` {exit} without a reported error"),
+        detail: lines[lines.len().saturating_sub(TAIL)..].join("\n"),
+        paths: Vec::new(),
+        locations: Vec::new(),
+    }
 }
 
 #[cfg(test)]
@@ -270,14 +317,44 @@ mod tests {
     }
 
     #[test]
+    fn settings_errors_are_reported_and_merges_keep_base_keys() {
+        let err = Settings::from_json(&serde_json::json!({"strict": "true", "target": "dev"})).unwrap_err();
+        assert!(err.contains("invalid databricks-bundle-ls settings"), "{err}");
+
+        let base = serde_json::json!({"databricksPath": "/bin/db", "target": "dev"});
+        let merged = merge(
+            &base,
+            &serde_json::json!({"databricks": {"target": "prod", "strict": true}}),
+        );
+        let settings = Settings::from_json(&merged).unwrap();
+        assert_eq!(settings.databricks_path.as_deref(), Some("/bin/db"));
+        assert_eq!(settings.target.as_deref(), Some("prod"));
+        assert!(settings.strict && settings.validates_on_open());
+        assert_eq!(merge(&base, &serde_json::Value::Null), base);
+        let settings = Settings::from_json(&serde_json::json!({"validateOnOpen": false, "bundleRoots": ["a"]}));
+        assert!(!settings.unwrap().validates_on_open());
+    }
+
+    #[test]
+    fn unparsed_failures_keep_the_stderr_tail_without_log_lines() {
+        let stderr = "Warn: [hostmetadata] noise\npanic: boom\n\ngoroutine 1 [running]:\n";
+        let diagnostic = unparsed_failure(Some(2), stderr);
+        assert_eq!(diagnostic.severity, Severity::Error);
+        assert!(diagnostic.summary.contains("exited with 2"));
+        assert_eq!(diagnostic.detail, "panic: boom\ngoroutine 1 [running]:");
+        assert!(unparsed_failure(None, "").summary.contains("was terminated"));
+    }
+
+    #[test]
     fn settings_accept_nested_and_camel_case() {
         let s = Settings::from_json(
             &serde_json::json!({"databricks": {"target": "dev", "databricksPath": "/bin/db", "strict": true}}),
-        );
+        )
+        .unwrap();
         assert_eq!(s.target.as_deref(), Some("dev"));
         assert_eq!(s.databricks_path.as_deref(), Some("/bin/db"));
         assert!(s.strict);
-        assert_eq!(Settings::from_json(&serde_json::json!(null)), Settings::default());
+        assert_eq!(Settings::from_json(&serde_json::json!(null)), Ok(Settings::default()));
     }
 
     #[test]

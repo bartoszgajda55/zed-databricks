@@ -47,9 +47,12 @@ fn main() -> Result<(), Error> {
         ..Default::default()
     };
     let params: InitializeParams = serde_json::from_value(connection.initialize(serde_json::to_value(capabilities)?)?)?;
-    let settings = Arc::new(Mutex::new(Settings::from_json(
-        &params.initialization_options.unwrap_or_default(),
-    )));
+    let base_options = params.initialization_options.unwrap_or_default();
+    let initial = Settings::from_json(&base_options).unwrap_or_else(|err| {
+        log_message(&connection.sender, MessageType::WARNING, err);
+        Settings::default()
+    });
+    let settings = Arc::new(Mutex::new(initial));
 
     let (queue, jobs) = mpsc::channel::<PathBuf>();
     let worker = {
@@ -79,7 +82,13 @@ fn main() -> Result<(), Error> {
                 )))?;
             }
             Message::Notification(notification) => {
-                handle_notification(notification, &settings, &mut known_roots, &queue);
+                let context = Context {
+                    base_options: &base_options,
+                    settings: &settings,
+                    queue: &queue,
+                    sender: &connection.sender,
+                };
+                handle_notification(notification, &context, &mut known_roots);
             }
             Message::Response(_) => {}
         }
@@ -93,12 +102,15 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn handle_notification(
-    notification: Notification,
-    settings: &Mutex<Settings>,
-    known_roots: &mut HashSet<PathBuf>,
-    queue: &mpsc::Sender<PathBuf>,
-) {
+struct Context<'a> {
+    /// Initialization options; configuration changes are merged over them.
+    base_options: &'a serde_json::Value,
+    settings: &'a Mutex<Settings>,
+    queue: &'a mpsc::Sender<PathBuf>,
+    sender: &'a crossbeam_channel::Sender<Message>,
+}
+
+fn handle_notification(notification: Notification, context: &Context, known_roots: &mut HashSet<PathBuf>) {
     let (uri, is_save) = match notification.method.as_str() {
         DidOpenTextDocument::METHOD => {
             let Ok(params) = serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notification.params) else {
@@ -117,14 +129,18 @@ fn handle_notification(
             else {
                 return;
             };
-            let new = Settings::from_json(&params.settings);
-            let mut current = settings.lock().unwrap();
-            // Zed sends `null`/`{}` when there are no settings; don't wipe initialization options.
-            if new != Settings::default() && new != *current {
-                *current = new;
-                for root in known_roots.iter() {
-                    let _ = queue.send(root.clone());
+            match Settings::from_json(&validate::merge(context.base_options, &params.settings)) {
+                Ok(new) => {
+                    let mut current = context.settings.lock().unwrap();
+                    if new != *current {
+                        let revalidate = new.validates_on_open();
+                        *current = new;
+                        for root in known_roots.iter().filter(|_| revalidate) {
+                            let _ = context.queue.send(root.clone());
+                        }
+                    }
                 }
+                Err(err) => log_message(context.sender, MessageType::WARNING, err),
             }
             return;
         }
@@ -135,9 +151,10 @@ fn handle_notification(
     let Some(root) = validate::find_bundle_root(&path) else {
         return;
     };
-    // Opening a file validates its bundle once; saves always revalidate.
-    if known_roots.insert(root.clone()) || is_save {
-        let _ = queue.send(root);
+    // Opening a file validates its bundle once (unless `validateOnOpen` is off); saves always do.
+    let first_open = known_roots.insert(root.clone());
+    if is_save || (first_open && context.settings.lock().unwrap().validates_on_open()) {
+        let _ = context.queue.send(root);
     }
 }
 
@@ -218,15 +235,16 @@ impl Worker {
     }
 
     fn log(&self, message: String) {
-        let params = LogMessageParams {
-            typ: MessageType::INFO,
-            message,
-        };
-        let _ = self.sender.send(Message::Notification(Notification::new(
-            LogMessage::METHOD.into(),
-            params,
-        )));
+        log_message(&self.sender, MessageType::INFO, message);
     }
+}
+
+fn log_message(sender: &crossbeam_channel::Sender<Message>, typ: MessageType, message: String) {
+    let params = LogMessageParams { typ, message };
+    let _ = sender.send(Message::Notification(Notification::new(
+        LogMessage::METHOD.into(),
+        params,
+    )));
 }
 
 /// Groups CLI diagnostics by file. Diagnostics without a location go on the root config file.
@@ -337,7 +355,10 @@ fn bundle_yaml_files(root: &Path) -> Vec<PathBuf> {
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name();
-            if path.is_dir() {
+            // `file_type` doesn't follow symlinks, so a symlinked directory (possibly a loop)
+            // is never descended into.
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_dir() {
                 if !SKIP.iter().any(|skip| name == *skip) {
                     stack.push(path);
                 }
@@ -403,6 +424,17 @@ mod tests {
         assert_eq!(file, dir.path().join("resources/job.yml"));
         assert_eq!(range, Range::new(Position::new(3, 28), Position::new(3, 41)));
         assert_eq!(locate_mentioned_path(dir.path(), "cannot authenticate"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_directories_are_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("resources")).unwrap();
+        std::fs::write(dir.path().join("resources/job.yml"), "x: 1\n").unwrap();
+        // A loop: resources/loop -> the bundle root.
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("resources/loop")).unwrap();
+        assert_eq!(bundle_yaml_files(dir.path()), [dir.path().join("resources/job.yml")]);
     }
 
     #[test]

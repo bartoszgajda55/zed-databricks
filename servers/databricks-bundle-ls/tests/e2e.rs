@@ -6,6 +6,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use lsp_types::Url;
 use serde_json::{json, Value};
 
 struct Client {
@@ -77,7 +78,7 @@ impl Client {
     }
 
     fn diagnostics_for(&self, file: &Path) -> Vec<Value> {
-        let uri = format!("file://{}", file.display());
+        let uri = uri(file);
         let message = self.wait_for(|m| m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == uri);
         message["params"]["diagnostics"].as_array().unwrap().clone()
     }
@@ -85,14 +86,19 @@ impl Client {
     fn open(&mut self, file: &Path) {
         self.send(
             json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {
-            "uri": format!("file://{}", file.display()), "languageId": "yaml", "version": 1,
+            "uri": uri(file), "languageId": "yaml", "version": 1,
             "text": std::fs::read_to_string(file).unwrap()}}}),
         );
     }
 
     fn save(&mut self, file: &Path) {
         self.send(json!({"jsonrpc": "2.0", "method": "textDocument/didSave",
-            "params": {"textDocument": {"uri": format!("file://{}", file.display())}}}));
+            "params": {"textDocument": {"uri": uri(file)}}}));
+    }
+
+    fn configure(&mut self, settings: Value) {
+        self.send(json!({"jsonrpc": "2.0", "method": "workspace/didChangeConfiguration",
+            "params": {"settings": settings}}));
     }
 
     fn shutdown(mut self) {
@@ -118,20 +124,33 @@ fn bundle(dir: &Path) {
     .unwrap();
 }
 
-/// A stand-in `databricks` that records its arguments and prints canned diagnostics.
-fn fake_cli(dir: &Path) -> std::path::PathBuf {
-    let script = dir.join("fake-databricks");
-    std::fs::write(
-        &script,
-        "#!/bin/sh\necho \"$@\" > \"$(dirname \"$0\")/args.txt\"\ncat >&2 <<'EOF'\nWarning: unknown field: bogus_field\n  at resources.jobs.my_job\n  in resources/job.yml:5:7\n\nName: demo\nFound 1 warning\nEOF\nexit 0\n",
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    script
+fn uri(file: &Path) -> String {
+    Url::from_file_path(file).unwrap().to_string()
+}
+
+const WARNING: &str = "Warning: unknown field: bogus_field\n  at resources.jobs.my_job\n  in resources/job.yml:5:7\n\nName: demo\nFound 1 warning\n";
+
+/// The `fake-databricks` example (see examples/), which `cargo test` builds alongside the tests.
+/// Returns its path and the environment that points it at `dir` for its script.
+fn fake_cli(dir: &Path, stderr: &str, exit_code: i32) -> (std::path::PathBuf, (&'static str, String)) {
+    std::fs::write(dir.join("stderr.txt"), stderr).unwrap();
+    std::fs::write(dir.join("exit.txt"), exit_code.to_string()).unwrap();
+    let debug_dir = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let exe = debug_dir
+        .join("examples")
+        .join(format!("fake-databricks{}", std::env::consts::EXE_SUFFIX));
+    assert!(
+        exe.exists(),
+        "{} is missing: run `cargo test` (it builds examples)",
+        exe.display()
+    );
+    (exe, ("FAKE_DATABRICKS_DIR", dir.display().to_string()))
 }
 
 #[test]
@@ -145,9 +164,9 @@ fn publishes_and_clears_diagnostics_with_the_selected_target() {
         "// comment\n{ \"terminal\": { \"env\": { \"DATABRICKS_BUNDLE_TARGET\": \"dev\", \"DATABRICKS_CONFIG_PROFILE\": \"zed-dev\", } } }\n",
     )
     .unwrap();
-    let cli = fake_cli(dir.path());
+    let (cli, fake_env) = fake_cli(dir.path(), WARNING, 0);
 
-    let mut client = Client::start(&[], json!({"databricksPath": cli}));
+    let mut client = Client::start(&[(fake_env.0, &fake_env.1)], json!({"databricksPath": cli}));
     let job = project.join("resources/job.yml");
     client.open(&job);
     let diagnostics = client.diagnostics_for(&job);
@@ -163,9 +182,57 @@ fn publishes_and_clears_diagnostics_with_the_selected_target() {
     );
 
     // Fix the file; the fake CLI now reports nothing, so the save must clear the diagnostic.
-    std::fs::write(&cli, "#!/bin/sh\necho 'Name: demo' >&2\necho 'Validation OK!' >&2\n").unwrap();
+    fake_cli(dir.path(), "Name: demo\nValidation OK!\n", 0);
     client.save(&job);
     assert!(client.diagnostics_for(&job).is_empty());
+    client.shutdown();
+}
+
+#[test]
+fn a_failure_without_a_parsable_error_is_still_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    bundle(&project);
+    let (cli, fake_env) = fake_cli(dir.path(), "panic: unexpected state\ngoroutine 1 [running]:\n", 2);
+    let mut client = Client::start(&[(fake_env.0, &fake_env.1)], json!({"databricksPath": cli}));
+    let root_config = project.join("databricks.yml");
+    client.open(&root_config);
+    let diagnostics = client.diagnostics_for(&root_config);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0]["severity"], 1);
+    let message = diagnostics[0]["message"].as_str().unwrap();
+    assert!(
+        message.contains("exited with 2") && message.contains("panic: unexpected state"),
+        "{message}"
+    );
+    client.shutdown();
+}
+
+#[test]
+fn validate_on_open_can_be_turned_off_and_config_changes_keep_the_cli_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    bundle(&project);
+    let (cli, fake_env) = fake_cli(dir.path(), WARNING, 0);
+    let args = dir.path().join("args.txt");
+    let mut client = Client::start(
+        &[(fake_env.0, &fake_env.1)],
+        json!({"databricksPath": cli, "validateOnOpen": false}),
+    );
+    let job = project.join("resources/job.yml");
+    client.open(&job);
+    // A configuration change (as Zed sends it, without `databricksPath`) must not drop the path
+    // from the initialization options, nor validate while `validateOnOpen` is off.
+    client.configure(json!({"target": "staging", "validateOnOpen": false}));
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(!args.exists(), "validated before any save");
+
+    client.save(&job);
+    assert_eq!(client.diagnostics_for(&job).len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(&args).unwrap(),
+        "bundle validate --target staging"
+    );
     client.shutdown();
 }
 
@@ -189,8 +256,13 @@ fn real_cli_reports_schema_warnings_with_locations() {
     let dir = tempfile::tempdir().unwrap();
     bundle(dir.path());
     // Unresolvable host: the CLI still reports config diagnostics, then fails authentication.
+    let config = dir.path().join("empty.databrickscfg");
+    std::fs::write(&config, "").unwrap();
     let mut client = Client::start(
-        &[("DATABRICKS_TOKEN", "dummy"), ("DATABRICKS_CONFIG_FILE", "/dev/null")],
+        &[
+            ("DATABRICKS_TOKEN", "dummy"),
+            ("DATABRICKS_CONFIG_FILE", config.to_str().unwrap()),
+        ],
         json!({}),
     );
     let job = dir.path().join("resources/job.yml");
