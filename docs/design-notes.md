@@ -50,7 +50,7 @@ With Databricks Connect, driver code runs in the local Python process, so Zed's 
 - `bundle run` without a key prompts for a resource, which works in Zed's task terminal.
 - `bundle destroy` asks for confirmation unless given `--auto-approve`.
 - `clusters delete` terminates a cluster (it can be restarted); `clusters permanent-delete` removes it. `clusters start` and `clusters delete` wait for the final state (up to 20 minutes) unless given `--no-wait`.
-- There is no command that matches a local environment to a cluster's runtime (`databricks environments` manages workspace base environments), so the task library doesn't pretend to have one.
+- `databricks environments setup-local` (CLI v1.9.0+, absent from v1.7.0) creates a uv-managed `.venv` matching a cluster or serverless version, including a compatible `databricks-connect`, and can fall back to the bundle target's `cluster_id`. It isn't in the task library yet.
 - Cluster policies are not a bundle resource type. The policy snippet is a cluster governed by `policy_id`, plus a `lookup: cluster_policy` variable.
 
 ### Token scopes
