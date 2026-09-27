@@ -191,6 +191,20 @@ def test_selected_text_reaches_the_cli_as_one_literal_argument(tmp_path):
     assert not (tmp_path / "pwned").exists()
 
 
+@pytest.mark.skipif(not HAS_CLI, reason="databricks CLI not installed")
+def test_task_commands_exist_in_the_installed_cli():
+    """Every `databricks …` command the tasks run is a real CLI command (catches renames)."""
+    commands = set()
+    for task in json.loads((TEMPLATE / "tasks.json").read_text()):
+        for match in re.finditer(r"\bdatabricks((?: [a-z][a-z-]*)+)", task["command"]):
+            commands.add(tuple(match.group(1).split()))
+    assert ("environments", "setup-local") in commands
+    for words in sorted(commands):
+        result = subprocess.run(["databricks", *words, "--help"], capture_output=True, text=True)
+        # Unknown subcommands fall back to the parent's help; the usage line names the real command.
+        assert f"databricks {' '.join(words)}" in result.stdout, (words, result.stdout[:300])
+
+
 def test_bundle_tasks_never_auto_approve_and_show_target():
     for task in json.loads((TEMPLATE / "tasks.json").read_text()):
         assert "--auto-approve" not in task["command"]

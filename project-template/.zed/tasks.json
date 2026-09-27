@@ -48,6 +48,14 @@
     "save": "all"
   },
   {
+    "label": "databricks: bundle open (pick resource)",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle open",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ]
+  },
+  {
     "label": "databricks: bundle summary",
     "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks bundle summary",
     "cwd": "$ZED_WORKTREE_ROOT",
@@ -65,6 +73,32 @@
     ],
     "use_new_terminal": true,
     "allow_concurrent_runs": false
+  },
+  {
+    "label": "databricks: pipelines dry-run on Databricks (deployed pipeline)",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks pipelines dry-run",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ]
+  },
+  {
+    "label": "databricks: pipelines logs (latest update)",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks pipelines logs",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": [
+      "databricks-bundle"
+    ]
+  },
+  {
+    "label": "databricks: environments setup-local (bundle target's cluster)",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks environments setup-local",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "databricks: environments setup-local (serverless)",
+    "command": "echo \"▶ bundle target: ${DATABRICKS_BUNDLE_TARGET:-<bundle default>} | profile: ${DATABRICKS_CONFIG_PROFILE:-<DEFAULT>}\" && databricks environments setup-local --serverless-version ${DATABRICKS_SERVERLESS_VERSION:-5}",
+    "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
     "label": "databricks: auth login",
@@ -87,12 +121,12 @@
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "sdp: dry-run pipeline spec (current file)",
+    "label": "sdp: dry-run pipeline spec on local Spark (current file)",
     "command": "PATH=\"$ZED_WORKTREE_ROOT/.venv/bin:$PATH\" spark-pipelines dry-run --spec \"$ZED_FILE\"",
     "cwd": "$ZED_WORKTREE_ROOT"
   },
   {
-    "label": "sdp: run pipeline spec (current file)",
+    "label": "sdp: run pipeline spec on local Spark (current file)",
     "command": "PATH=\"$ZED_WORKTREE_ROOT/.venv/bin:$PATH\" spark-pipelines run --spec \"$ZED_FILE\"",
     "cwd": "$ZED_WORKTREE_ROOT"
   },

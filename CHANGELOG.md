@@ -4,7 +4,12 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ## [Unreleased]
 
+### Added
+- Tasks for newer Databricks CLI commands: `environments setup-local` (a `.venv` matching the bundle target's cluster or serverless, including `databricks-connect`; CLI v1.9.0+), `bundle open`, and `pipelines dry-run` / `pipelines logs` on Databricks. The debugger setup now uses `environments setup-local` instead of a manual `databricks-connect` install.
+
 ### Changed
+- The local pipeline tasks are labelled "on local Spark" to tell them apart from the dry-run on Databricks.
+- CI runs against Databricks CLI v1.18.0, and checks that every CLI command the tasks use exists.
 - The extension downloads the `databricks-bundle-ls` release matching its own version instead of the latest one, and checks for a cached copy before going online. With no network (or when GitHub's API rate limit is hit), it falls back to the newest cached copy.
 - `databricks-bundle-ls` settings can all go under `lsp.databricks-bundle-ls.settings`; configuration changes are merged over the initialization options instead of replacing them, and invalid settings are reported in the language server log instead of being silently ignored.
 - New setting `validateOnOpen` (default `true`); set it to `false` to validate only on save.

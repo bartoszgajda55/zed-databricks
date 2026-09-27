@@ -30,12 +30,12 @@ Zed has no webview or panel API, so instead of a workspace browser you get edito
 | --- | --- |
 | Python types | basedpyright understands the Databricks-only pipeline API (`expect*`, SCD type 2 AUTO CDC, …) and the runtime globals `spark`, `dbutils` and `display`. |
 | Ruff | Format on save, organized imports, and no F821 errors on `spark` / `dbutils` / `display`. |
-| Tasks | `bundle validate / plan / deploy / run / summary / destroy`, `auth login / profiles / describe`, `spark-pipelines dry-run / run`, `pytest`. |
+| Tasks | `bundle validate / plan / deploy / run / open / summary / destroy`, pipeline dry-runs and logs on Databricks, local Spark pipeline runs, `environments setup-local`, `auth`, `pytest`. |
 | Debugging | Breakpoints in driver-side PySpark with Zed's Debugpy adapter, while Spark runs on the bundle target's cluster or on serverless through Databricks Connect. |
 
 ## Install
 
-Prerequisite: the [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html), authenticated with `databricks auth login` or a `~/.databrickscfg` profile.
+Prerequisite: the [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html), authenticated with `databricks auth login` or a `~/.databrickscfg` profile. The extension works with any recent version; the tasks use commands from v1.9.0 onwards, and the latest version is recommended.
 
 1. **Extension.** In Zed, open `zed: extensions`, search for **Databricks** and install it. On first use it downloads its diagnostics server, `databricks-bundle-ls`, from the GitHub release matching the extension's version.
    - To use your own build of the server instead, put it on `PATH` (for example `cargo install --git https://github.com/bartoszgajda55/zed-databricks --tag v<version> databricks-bundle-ls`) or set `lsp.databricks-bundle-ls.binary.path`.
@@ -167,10 +167,13 @@ Type a prefix and accept it from the completion list; Tab moves between placehol
 
 ### Tasks
 
-Open them with `task: spawn`.
-- **`bundle run (pick resource)`**: the CLI prompts you for a resource.
+Open them with `task: spawn`. Tasks that work on the bundle print the active target and profile first.
+- **`bundle run (pick resource)`** / **`bundle open (pick resource)`**: the CLI prompts you for a resource to run, or to open in the browser.
 - **`bundle run "…"`**: runs the resource key currently selected in the editor.
 - **`bundle destroy`**: always asks for confirmation.
+- **`pipelines dry-run on Databricks`**: checks the *deployed* pipeline's graph on Databricks, including Databricks-only features, without materializing data. **`pipelines logs`** shows the events of its latest update.
+- **`sdp: … on local Spark`**: run or dry-run a pipeline spec with open-source Spark on your machine. It's free, but can't check Databricks-only syntax.
+- **`environments setup-local`**: creates or updates the project's `.venv` to match your compute, with the same Python version and a compatible `databricks-connect` (uses uv; see [Debugging](#debugging-with-databricks-connect)). One task uses the bundle target's cluster; the other uses serverless, version `DATABRICKS_SERVERLESS_VERSION` (default 5).
 - **`sdp` / `pytest`**: use the project's `.venv/bin` when it exists.
 
 ### Python
@@ -189,7 +192,7 @@ Compute and profile use Databricks Connect's own configuration: `DATABRICKS_CONF
 - **Profile and target:** from `.zed/settings.json` `terminal.env`, the same ones the tasks and diagnostics use.
 - **Compute:** the bundle target's `cluster_id`, otherwise serverless.
 
-Install `databricks-connect` in the project's Python environment. Its version must match your compute (for example, serverless or DBR 17 → 17.x).
+Set up the project's Python environment with the task **databricks: environments setup-local** (serverless, or the bundle target's cluster). It runs `databricks environments setup-local` (CLI v1.9.0+), which uses uv to create `.venv` with the Python version and a `databricks-connect` that match your compute. Zed then picks up `.venv` for debugging. If uv isn't installed, install it or set `DATABRICKS_LOCALENV_AUTO_INSTALL_UV=1` to let the CLI install it.
 
 The same runner is available without the debugger as the task **databricks-connect: run current file**.
 

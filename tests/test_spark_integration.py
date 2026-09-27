@@ -1,6 +1,6 @@
 """Run the portable SDP / PySpark snippets against a real local Spark (needs Java; see scripts/dev-setup.sh).
 
-The pipeline is dry-run with the same command the "sdp: dry-run pipeline spec" task uses.
+The pipeline is dry-run with the same command the "sdp: dry-run pipeline spec on local Spark" task uses.
 Snippets marked "Databricks only" in their description are excluded: OSS Spark doesn't
 support them (expectations, Auto Loader / read_files, SQL AUTO CDC).
 """

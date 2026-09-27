@@ -21,7 +21,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - uses: databricks/setup-cli@d76f84cea9893ce68311a1f33fb0c95af6c963b7 # v1.17.0
+      - uses: databricks/setup-cli@6a2e75f1f954d87503702c408deea63216c0799d # v1.18.0
       - run: uv sync
       - name: Lint and type-check
         run: |
@@ -68,7 +68,7 @@ jobs:
         with:
           workspaces: servers/databricks-bundle-ls
       # The end-to-end tests also run against the real CLI.
-      - uses: databricks/setup-cli@d76f84cea9893ce68311a1f33fb0c95af6c963b7 # v1.17.0
+      - uses: databricks/setup-cli@6a2e75f1f954d87503702c408deea63216c0799d # v1.18.0
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
