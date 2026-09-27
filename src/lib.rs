@@ -7,25 +7,31 @@
 //!   left alone.
 
 mod bundle_schema;
+mod platform;
 
 use std::fs;
 
 use zed_extension_api::{self as zed, serde_json, settings::LspSettings, LanguageServerId, Result, Worktree};
 
-const BUNDLE_LS: &str = "databricks-bundle-ls";
+use platform::SERVER_NAME as BUNDLE_LS;
+
 const YAML_LS: &str = "yaml-language-server";
 const GITHUB_REPO: &str = "bartoszgajda55/zed-databricks";
+/// The extension and `databricks-bundle-ls` are released together, so each extension version
+/// downloads the server from its own release tag rather than whatever is latest.
+const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Default)]
 struct DatabricksExtension {
-    /// Path of a server binary this extension downloaded, reused for the rest of the session.
-    downloaded_server: Option<String>,
-    /// Absolute path of the generated schema, keyed by the CLI version that produced it.
-    schema: Option<(String, String)>,
+    /// Schema for yaml-language-server, resolved once per session: the generated file's
+    /// absolute path, or the latest published schema's URL when the CLI isn't available.
+    schema: Option<String>,
 }
 
 impl DatabricksExtension {
-    fn server_binary(&mut self, id: &LanguageServerId, worktree: &Worktree) -> Result<String> {
+    /// The user's binary (setting or PATH), else the pinned release (cached, then downloaded),
+    /// else any cached release, so the server still starts offline.
+    fn server_binary(&self, id: &LanguageServerId, worktree: &Worktree) -> Result<String> {
         let settings = LspSettings::for_worktree(BUNDLE_LS, worktree).unwrap_or_default();
         if let Some(path) = settings.binary.and_then(|binary| binary.path) {
             return Ok(path);
@@ -33,94 +39,111 @@ impl DatabricksExtension {
         if let Some(path) = worktree.which(BUNDLE_LS) {
             return Ok(path);
         }
-        if let Some(path) = &self.downloaded_server {
-            if fs::metadata(path).is_ok_and(|meta| meta.is_file()) {
-                return Ok(path.clone());
+        let (os, arch) = zed::current_platform();
+        let binary_name = platform::server_binary_name(os);
+        let pinned = format!("{}/{binary_name}", platform::version_dir(SERVER_VERSION));
+        if is_file(&pinned) {
+            return Ok(platform::absolute(&pinned));
+        }
+        match self.download_server(id, os, arch, &pinned) {
+            Ok(()) => Ok(platform::absolute(&pinned)),
+            Err(err) => {
+                let cached = fs::read_dir(".").ok().and_then(|entries| {
+                    let names = entries
+                        .flatten()
+                        .map(|entry| entry.file_name().to_string_lossy().into_owned());
+                    platform::newest_cached_version(names)
+                });
+                zed::set_language_server_installation_status(id, &zed::LanguageServerInstallationStatus::None);
+                match cached
+                    .map(|dir| format!("{dir}/{binary_name}"))
+                    .filter(|path| is_file(path))
+                {
+                    Some(path) => Ok(platform::absolute(&path)),
+                    None => Err(format!(
+                        "could not download {BUNDLE_LS} {SERVER_VERSION}: {err}. Install it on PATH \
+                         (`cargo install --git https://github.com/{GITHUB_REPO} --tag v{SERVER_VERSION} {BUNDLE_LS}`) \
+                         or set lsp.{BUNDLE_LS}.binary.path"
+                    )),
+                }
             }
         }
-        let path = self.download_server(id).map_err(|err| {
-            format!(
-                "{BUNDLE_LS} not found. Put it on PATH (`cargo install --path servers/{BUNDLE_LS}`), \
-                 set lsp.{BUNDLE_LS}.binary.path, or publish a release. Download failed: {err}"
-            )
-        })?;
-        self.downloaded_server = Some(path.clone());
-        Ok(path)
     }
 
-    fn download_server(&self, id: &LanguageServerId) -> Result<String> {
+    fn download_server(&self, id: &LanguageServerId, os: zed::Os, arch: zed::Architecture, binary: &str) -> Result<()> {
         zed::set_language_server_installation_status(id, &zed::LanguageServerInstallationStatus::CheckingForUpdate);
-        let release = zed::latest_github_release(
-            GITHUB_REPO,
-            zed::GithubReleaseOptions {
-                require_assets: true,
-                pre_release: false,
-            },
-        )?;
-        let (os, arch) = zed::current_platform();
-        let target = bundle_schema::release_target(os, arch)?;
-        let asset_name = format!("{BUNDLE_LS}-{target}.tar.gz");
+        let release = zed::github_release_by_tag_name(GITHUB_REPO, &format!("v{SERVER_VERSION}"))?;
+        let asset_name = format!("{BUNDLE_LS}-{}.tar.gz", platform::release_target(os, arch)?);
         let asset = release
             .assets
             .iter()
             .find(|asset| asset.name == asset_name)
             .ok_or_else(|| format!("release {} has no asset {asset_name}", release.version))?;
 
-        let version_dir = format!("{BUNDLE_LS}-{}", release.version);
-        let binary = format!(
-            "{version_dir}/{BUNDLE_LS}{}",
-            if matches!(os, zed::Os::Windows) { ".exe" } else { "" }
-        );
-        if !fs::metadata(&binary).is_ok_and(|meta| meta.is_file()) {
-            zed::set_language_server_installation_status(id, &zed::LanguageServerInstallationStatus::Downloading);
-            zed::download_file(&asset.download_url, &version_dir, zed::DownloadedFileType::GzipTar)?;
-            zed::make_file_executable(&binary)?;
-            // Remove older downloads.
-            for entry in fs::read_dir(".").map_err(|err| err.to_string())?.flatten() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if name.starts_with(&format!("{BUNDLE_LS}-")) && name != version_dir {
-                    fs::remove_dir_all(entry.path()).ok();
-                }
+        zed::set_language_server_installation_status(id, &zed::LanguageServerInstallationStatus::Downloading);
+        let version_dir = platform::version_dir(SERVER_VERSION);
+        zed::download_file(&asset.download_url, &version_dir, zed::DownloadedFileType::GzipTar)?;
+        zed::make_file_executable(binary)?;
+        // Keep only this version; older ones were fallbacks for a failed download.
+        for entry in fs::read_dir(".").map_err(|err| err.to_string())?.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with(&format!("{BUNDLE_LS}-")) && name != version_dir {
+                fs::remove_dir_all(entry.path()).ok();
             }
         }
         zed::set_language_server_installation_status(id, &zed::LanguageServerInstallationStatus::None);
-        Ok(bundle_schema::absolute(&binary))
+        Ok(())
     }
 
-    /// Generates `bundle-schema-<cli version>.json` in the extension's work directory, once per session
-    /// (restart Zed after upgrading the CLI to pick up a new schema).
-    fn ensure_schema(&mut self, worktree: &Worktree) -> Result<String> {
-        if let Some((_, path)) = &self.schema {
-            return Ok(path.clone());
-        }
-        let env = worktree.shell_env();
-        let version_output = zed::process::Command::new("databricks")
-            .arg("--version")
-            .envs(env.clone())
+    /// The schema for this session (restart Zed after upgrading the CLI to pick up a new one).
+    fn schema(&mut self, worktree: &Worktree) -> String {
+        self.schema
+            .get_or_insert_with(|| {
+                // Without a local CLI, fall back to the schema of the latest CLI release.
+                generate_schema(worktree).unwrap_or_else(|_| bundle_schema::LATEST_SCHEMA_URL.to_string())
+            })
+            .clone()
+    }
+}
+
+/// Generates `bundle-schema-<cli version>.json` in the extension's work directory (once per CLI
+/// version, removing other versions' files) and returns its absolute path.
+fn generate_schema(worktree: &Worktree) -> Result<String> {
+    let env = worktree.shell_env();
+    let version_output = zed::process::Command::new("databricks")
+        .arg("--version")
+        .envs(env.clone())
+        .output()?;
+    let version = bundle_schema::parse_cli_version(&String::from_utf8_lossy(&version_output.stdout))
+        .ok_or("could not determine the Databricks CLI version")?;
+
+    let file = format!("bundle-schema-{version}.json");
+    if !fs::metadata(&file).is_ok_and(|meta| meta.len() > 0) {
+        let output = zed::process::Command::new("databricks")
+            .args(["bundle", "schema"])
+            .envs(env)
             .output()?;
-        let version = bundle_schema::parse_cli_version(&String::from_utf8_lossy(&version_output.stdout))
-            .ok_or("could not determine the Databricks CLI version")?;
-
-        let file = format!("bundle-schema-{version}.json");
-        if !fs::metadata(&file).is_ok_and(|meta| meta.len() > 0) {
-            let output = zed::process::Command::new("databricks")
-                .args(["bundle", "schema"])
-                .envs(env)
-                .output()?;
-            if output.status != Some(0) {
-                return Err(format!(
-                    "`databricks bundle schema` failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
-            serde_json::from_slice::<serde_json::Value>(&output.stdout)
-                .map_err(|err| format!("`databricks bundle schema` returned invalid JSON: {err}"))?;
-            fs::write(&file, &output.stdout).map_err(|err| err.to_string())?;
+        if output.status != Some(0) {
+            return Err(format!(
+                "`databricks bundle schema` failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
-        let path = bundle_schema::absolute(&file);
-        self.schema = Some((version, path.clone()));
-        Ok(path)
+        serde_json::from_slice::<serde_json::Value>(&output.stdout)
+            .map_err(|err| format!("`databricks bundle schema` returned invalid JSON: {err}"))?;
+        fs::write(&file, &output.stdout).map_err(|err| err.to_string())?;
+        for entry in fs::read_dir(".").map_err(|err| err.to_string())?.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if bundle_schema::is_schema_file(&name) && name != file {
+                fs::remove_file(entry.path()).ok();
+            }
+        }
     }
+    Ok(platform::absolute(&file))
+}
+
+fn is_file(path: &str) -> bool {
+    fs::metadata(path).is_ok_and(|meta| meta.is_file())
 }
 
 impl zed::Extension for DatabricksExtension {
@@ -177,13 +200,14 @@ impl zed::Extension for DatabricksExtension {
         if target_id.as_ref() != YAML_LS {
             return Ok(None);
         }
-        let settings = LspSettings::for_worktree(BUNDLE_LS, worktree)
-            .ok()
-            .and_then(|s| s.settings);
+        let settings = LspSettings::for_worktree(BUNDLE_LS, worktree).unwrap_or_default();
         let root_is_bundle = ["databricks.yml", "databricks.yaml"]
             .iter()
             .any(|file| worktree.read_text_file(file).is_ok());
-        let roots = bundle_schema::bundle_roots(settings.as_ref(), root_is_bundle);
+        let roots = bundle_schema::bundle_roots(
+            &[settings.settings.as_ref(), settings.initialization_options.as_ref()],
+            root_is_bundle,
+        );
         if roots.is_empty() {
             return Ok(None);
         }
@@ -194,11 +218,7 @@ impl zed::Extension for DatabricksExtension {
         if bundle_schema::user_maps_bundle_schema(yaml_settings.as_ref()) {
             return Ok(None);
         }
-        let schema = match self.ensure_schema(worktree) {
-            Ok(path) => path,
-            // Without a local CLI, fall back to the schema of the latest CLI release.
-            Err(_) => bundle_schema::LATEST_SCHEMA_URL.to_string(),
-        };
+        let schema = self.schema(worktree);
         let globs = bundle_schema::bundle_file_globs(&worktree.root_path(), &roots);
         Ok(Some(bundle_schema::yaml_schema_configuration(&schema, &globs)))
     }

@@ -1,9 +1,14 @@
 //! Pure helpers (no host calls), unit-tested natively.
 
-use zed_extension_api::{serde_json, Architecture, Os};
+use zed_extension_api::serde_json;
 
 /// Schema published with every CLI release; also what SchemaStore points `databricks.yml` at.
 pub const LATEST_SCHEMA_URL: &str = "https://github.com/databricks/cli/releases/latest/download/jsonschema.json";
+
+/// Schema files this extension generated (`bundle-schema-<cli version>.json`).
+pub fn is_schema_file(name: &str) -> bool {
+    name.starts_with("bundle-schema-") && name.ends_with(".json")
+}
 
 /// Files that are (fragments of) bundle configuration, relative to a bundle root.
 const BUNDLE_FILE_GLOBS: [&str; 6] = [
@@ -16,12 +21,11 @@ const BUNDLE_FILE_GLOBS: [&str; 6] = [
 ];
 
 /// Bundle roots (relative to the worktree) whose files get the bundle schema: the `bundleRoots`
-/// setting if present, otherwise the worktree root when it contains `databricks.yml`.
-pub fn bundle_roots(settings: Option<&serde_json::Value>, root_is_bundle: bool) -> Vec<String> {
-    match settings
-        .and_then(|s| s.get("bundleRoots"))
-        .and_then(|roots| roots.as_array())
-    {
+/// setting if present (`settings` first, then `initialization_options`), otherwise the worktree
+/// root when it contains `databricks.yml`.
+pub fn bundle_roots(sources: &[Option<&serde_json::Value>], root_is_bundle: bool) -> Vec<String> {
+    let setting = sources.iter().flatten().find_map(|source| source.get("bundleRoots"));
+    match setting.and_then(|roots| roots.as_array()) {
         Some(roots) => roots
             .iter()
             .filter_map(|root| root.as_str())
@@ -122,29 +126,16 @@ pub fn initialization_options(user: Option<serde_json::Value>, databricks_path: 
     serde_json::Value::Object(options)
 }
 
-/// Rust target triple used in release asset names.
-pub fn release_target(os: Os, arch: Architecture) -> Result<&'static str, String> {
-    Ok(match (os, arch) {
-        (Os::Mac, Architecture::Aarch64) => "aarch64-apple-darwin",
-        (Os::Mac, Architecture::X8664) => "x86_64-apple-darwin",
-        (Os::Linux, Architecture::Aarch64) => "aarch64-unknown-linux-gnu",
-        (Os::Linux, Architecture::X8664) => "x86_64-unknown-linux-gnu",
-        (Os::Windows, Architecture::X8664) => "x86_64-pc-windows-msvc",
-        _ => return Err("no prebuilt databricks-bundle-ls for this platform".into()),
-    })
-}
-
-/// Paths in the extension's work directory, made absolute for the host / other language servers.
-pub fn absolute(relative: &str) -> String {
-    std::env::current_dir()
-        .map(|dir| dir.join(relative).to_string_lossy().into_owned())
-        .unwrap_or_else(|_| relative.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn recognizes_generated_schema_files() {
+        assert!(is_schema_file("bundle-schema-1.7.0.json"));
+        assert!(!is_schema_file("databricks-bundle-ls-0.2.1"));
+    }
 
     #[test]
     fn parses_cli_version() {
@@ -159,12 +150,15 @@ mod tests {
 
     #[test]
     fn bundle_roots_come_from_settings_or_detection() {
-        assert_eq!(bundle_roots(None, true), ["."]);
-        assert!(bundle_roots(None, false).is_empty());
-        assert!(bundle_roots(Some(&json!({"strict": true})), false).is_empty());
+        assert_eq!(bundle_roots(&[None], true), ["."]);
+        assert!(bundle_roots(&[None], false).is_empty());
+        assert!(bundle_roots(&[Some(&json!({"strict": true}))], false).is_empty());
         let settings = json!({"bundleRoots": ["bundles/etl", "bundles/ml"]});
-        assert_eq!(bundle_roots(Some(&settings), true), ["bundles/etl", "bundles/ml"]);
-        assert!(bundle_roots(Some(&json!({"bundleRoots": []})), true).is_empty());
+        assert_eq!(
+            bundle_roots(&[None, Some(&settings)], true),
+            ["bundles/etl", "bundles/ml"]
+        );
+        assert!(bundle_roots(&[Some(&json!({"bundleRoots": []})), Some(&settings)], true).is_empty());
     }
 
     #[test]
