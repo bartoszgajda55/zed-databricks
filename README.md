@@ -10,6 +10,10 @@ Zed has no webview or panel API, so instead of a workspace browser you get edito
 
 > A community project, not affiliated with or endorsed by Databricks, Inc. Databricks is a trademark of Databricks, Inc.
 
+![Completion of job settings, with their documentation, in a bundle resource file](docs/images/completion.png)
+
+![Hover on a notebook path: the schema's documentation, and the "notebook not found" error from databricks bundle validate](docs/images/diagnostics.png)
+
 ## Features
 
 **In the extension** (install from Zed's extension gallery):
@@ -94,6 +98,11 @@ Settings go under `lsp.databricks-bundle-ls.settings` (`initialization_options` 
 **What runs automatically.** Validation runs the Databricks CLI in the bundle, and bundles that define resources in Python run that project code too. Zed only starts language servers and applies a project's `.zed/settings.json` once you [trust the project](https://zed.dev/docs/worktree-trust), so this doesn't happen for a freshly cloned, untrusted repository. Set `validateOnOpen` to `false` to validate only when you save.
 
 ### Snippets
+
+<p>
+  <img src="docs/images/snippets-bundle.png" alt="Bundle snippets offered after typing dab- in a YAML file" width="49%">
+  <img src="docs/images/snippets-pipeline.png" alt="Pipeline snippets offered after typing sdp- in a Python file" width="49%">
+</p>
 
 Type a prefix and accept it from the completion list; Tab moves between placeholders. Snippets marked **Databricks only** use syntax OSS Spark lacks (expectations, Auto Loader / `read_files`, SQL `AUTO CDC`). The CDC snippets default to SCD type 1, the only type OSS Spark supports.
 
