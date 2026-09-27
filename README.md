@@ -99,13 +99,24 @@ Databricks documents bundle pipelines for [GitHub Actions](https://docs.databric
 
 ### AI agents
 
-This project doesn't ship agent tools. Databricks' official route for coding agents is its skills, which teach an agent to use the `databricks` CLI (bundles, jobs, pipelines, SQL and more):
+This extension and Databricks' agent skills complement each other:
+- **The skills give the agent knowledge.** Databricks' skills teach an agent how to write bundles, pipelines, jobs and more (`databricks-dabs`, `databricks-pipelines`, …), driving the `databricks` CLI.
+- **The extension gives the agent feedback.** Schema errors and `databricks bundle validate` results appear as diagnostics, which Zed's agent reads. So it sees what's wrong in a bundle file it just edited, and fixes it.
+
+For Claude Code, Codex, Cursor and the other agents Databricks supports, install the skills with the CLI. Claude Code and Codex also run inside Zed's agent panel.
 
 ```sh
 databricks aitools install
 ```
 
-The skills support Claude Code, Codex, Cursor and other agents. Claude Code and Codex also run inside Zed's agent panel. For agents working with data rather than code, see Databricks' [managed MCP servers](https://docs.databricks.com/aws/en/agents/mcp-tools/managed-mcp).
+`aitools` doesn't target Zed's own agent yet. Zed loads skills from `~/.agents/skills/` (or `.agents/skills/` in a project), and Databricks' skills already use the standard `SKILL.md` format it reads. Until `aitools` supports Zed, copy them there, and repeat to update:
+
+```sh
+git clone --depth 1 https://github.com/databricks/databricks-agent-skills /tmp/databricks-agent-skills
+mkdir -p ~/.agents/skills && cp -R /tmp/databricks-agent-skills/skills/* ~/.agents/skills/
+```
+
+This copies the latest skills, so keep the Databricks CLI up to date too. For agents working with data rather than code, see Databricks' [managed MCP servers](https://docs.databricks.com/aws/en/agents/mcp-tools/managed-mcp).
 
 ### Snippets
 
