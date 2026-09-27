@@ -8,7 +8,7 @@ Thanks for helping. Bug reports, snippet ideas and pull requests are all welcome
 | --- | --- |
 | `src/`, `extension.toml`, `snippets/` | The Zed extension, compiled to `wasm32-wasip2` |
 | `servers/databricks-bundle-ls/` | The diagnostics language server (native Rust, its own Cargo workspace) |
-| `project-template/` | Files `scripts/setup-project.sh` copies into projects, plus CI/CD templates |
+| `project-template/` | Files `scripts/setup-project.sh` copies into projects |
 | `tests/` | Python tests for snippets, templates, stubs, local Spark, the debugger runner and releases |
 | `docs/design-notes.md` | How Zed, the Databricks CLI and Spark behave, and the design choices that follow |
 

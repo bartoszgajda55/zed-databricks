@@ -32,12 +32,11 @@ FAKE_CONNECT = textwrap.dedent("""\
         def range(self, n): return _Frame(n)
 
     class _Builder:
-        def profile(self, p): self.p = p; return self
-        def clusterId(self, c): self.c = c; return self
-        def serverless(self, enabled=True): self.s = enabled; return self
         def getOrCreate(self):
+            # Like the real one, configure from the environment.
+            names = ("DATABRICKS_CONFIG_PROFILE", "DATABRICKS_CLUSTER_ID", "DATABRICKS_SERVERLESS_COMPUTE_ID")
             with open(os.environ["FAKE_CONNECT_LOG"], "w") as log:
-                json.dump({"profile": getattr(self, "p", None), "cluster": getattr(self, "c", None), "serverless": getattr(self, "s", False)}, log)
+                json.dump({name: os.environ.get(name) for name in names}, log)
             return _Session()
 
     class DatabricksSession:
@@ -75,38 +74,60 @@ def load_jsonc(path: Path):
 
 
 def test_parse_args():
-    options = runner.parse_args(["--profile", "p", "--cluster-id", "c1", "job.py", "--flag", "x"])
-    assert (options.profile, options.cluster_id, options.file, options.args) == ("p", "c1", "job.py", ["--flag", "x"])
-    module = runner.parse_args(["--serverless", "-m", "pytest", "-k", "t"])
-    assert module.serverless and module.module == "pytest" and module.args == ["-k", "t"]
-    with pytest.raises(SystemExit):
-        runner.parse_args(["--profile", "p"])
+    job = runner.parse_args(["job.py", "--flag", "x"])
+    assert (job.file, job.module, job.args) == ("job.py", None, ["--flag", "x"])
+    module = runner.parse_args(["-m", "pytest", "-k", "t"])
+    assert (module.file, module.module, module.args) == (None, "pytest", ["-k", "t"])
+    for bad in ([], ["-m"], ["--profile", "p"]):
+        with pytest.raises(SystemExit):
+            runner.parse_args(bad)
 
 
-def test_compute_resolution_order(tmp_path, monkeypatch):
+@pytest.fixture
+def project(tmp_path, monkeypatch):
     (tmp_path / ".zed").mkdir()
     (tmp_path / ".zed/settings.json").write_text(
         '// c\n{"terminal": {"env": {"DATABRICKS_CONFIG_PROFILE": "from-zed", "DATABRICKS_BUNDLE_TARGET": "dev",}}}\n'
     )
     (tmp_path / "databricks.yml").write_text("bundle: {name: x}\n")
+    (tmp_path / "databrickscfg").write_text(
+        "[DEFAULT]\nhost = https://x\ncluster_id = default-c\n\n[from-zed]\nhost = https://x\n\n[with-cluster]\ncluster_id = profile-c\n"
+    )
     calls = []
     monkeypatch.setattr(
-        runner, "bundle_cluster_id", lambda root, target, profile: calls.append((target, profile)) or "bundle-cluster"
+        runner, "bundle_cluster_id", lambda root, target, profile: calls.append((target, profile)) or "bundle-c"
     )
-    options = runner.Options
+    return tmp_path, calls
 
-    assert runner.resolve(options(serverless=True), tmp_path, {}) == runner.Compute("from-zed", None, "--serverless")
-    assert runner.resolve(options(cluster_id="c1", profile="p"), tmp_path, {}).cluster_id == "c1"
-    assert runner.resolve(options(), tmp_path, {"DATABRICKS_CLUSTER_ID": "env-c"}).source == "DATABRICKS_CLUSTER_ID"
-    from_bundle = runner.resolve(options(), tmp_path, {"DATABRICKS_CONFIG_PROFILE": "env-p"})
-    assert from_bundle == runner.Compute("env-p", "bundle-cluster", "bundle target dev")
-    assert calls[-1] == ("dev", "env-p")
 
+def test_configure_fills_in_only_what_databricks_connect_lacks(project):
+    root, calls = project
+    cfg = {"DATABRICKS_CONFIG_FILE": str(root / "databrickscfg")}
+
+    # Explicit Databricks Connect settings win; the Zed profile only fills a gap.
+    env = {**cfg, "DATABRICKS_CLUSTER_ID": "env-c"}
+    assert runner.configure(root, env) == "cluster env-c (DATABRICKS_CLUSTER_ID), profile from-zed"
+    assert env["DATABRICKS_CONFIG_PROFILE"] == "from-zed" and "DATABRICKS_SERVERLESS_COMPUTE_ID" not in env
+    env = {**cfg, "DATABRICKS_SERVERLESS_COMPUTE_ID": "auto", "DATABRICKS_CONFIG_PROFILE": "p"}
+    assert runner.configure(root, env) == "serverless (DATABRICKS_SERVERLESS_COMPUTE_ID), profile p"
+
+    # A profile that picks compute is left to Databricks Connect (DEFAULT is not inherited).
+    env = {**cfg, "DATABRICKS_CONFIG_PROFILE": "with-cluster"}
+    assert runner.configure(root, env) == "compute from the profile with-cluster"
+    assert "DATABRICKS_CLUSTER_ID" not in env and calls == []
+
+    # Otherwise the bundle target's cluster, else serverless.
+    env = dict(cfg)
+    assert runner.configure(root, env) == "cluster bundle-c (bundle target dev), profile from-zed"
+    assert env["DATABRICKS_CLUSTER_ID"] == "bundle-c" and calls == [("dev", "from-zed")]
+
+
+def test_configure_defaults_to_serverless(project, monkeypatch):
+    root, _ = project
     monkeypatch.setattr(runner, "bundle_cluster_id", lambda *_: None)
-    assert (
-        runner.resolve(options(), tmp_path, {}).describe()
-        == "Databricks Connect: serverless (default), profile from-zed"
-    )
+    env = {"DATABRICKS_CONFIG_FILE": str(root / "databrickscfg")}
+    assert runner.configure(root, env) == "serverless (default), profile from-zed"
+    assert env["DATABRICKS_SERVERLESS_COMPUTE_ID"] == "auto"
 
 
 def test_bundle_cluster_id_reads_the_resolved_target(tmp_path, monkeypatch):
@@ -177,7 +198,11 @@ def test_breakpoint_in_user_file_with_injected_spark(job, tmp_path):
     finally:
         client.close()
     assert "result 42" in "".join(client.output)
-    assert json.loads(log.read_text()) == {"profile": "p1", "cluster": "0923-xyz", "serverless": False}
+    assert json.loads(log.read_text()) == {
+        "DATABRICKS_CONFIG_PROFILE": "p1",
+        "DATABRICKS_CLUSTER_ID": "0923-xyz",
+        "DATABRICKS_SERVERLESS_COMPUTE_ID": None,
+    }
 
 
 CONNECT_PYTHON = os.environ.get("DATABRICKS_CONNECT_PYTHON")

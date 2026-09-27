@@ -15,4 +15,3 @@ First public release.
 - Zed tasks for `bundle validate / plan / deploy / run / summary / destroy`, `auth`, `spark-pipelines` and `pytest`.
 - Debug scenarios that run the current file or its tests under debugpy against Databricks compute through Databricks Connect.
 - Partial type stubs for the Databricks-only `pyspark.pipelines` API, and runtime globals (`spark`, `dbutils`, `display`) for basedpyright and ruff.
-- CI/CD templates for GitHub Actions and Azure DevOps.

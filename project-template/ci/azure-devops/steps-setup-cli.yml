@@ -1,6 +1,0 @@
-# Installs the pinned Databricks CLI (DATABRICKS_CLI_VERSION) with the official install script.
-steps:
-  - script: |
-      curl -fsSL "https://raw.githubusercontent.com/databricks/setup-cli/v$(DATABRICKS_CLI_VERSION)/install.sh" | sudo sh
-      databricks --version
-    displayName: Install Databricks CLI

@@ -19,7 +19,6 @@ Zed has no webview or panel API, so instead of a workspace browser you get edito
 | Ruff | `.zed/settings.json` | Format on save, organized imports, and no F821 errors on `spark` / `dbutils` / `display`. |
 | Task library | `.zed/tasks.json` | `bundle validate / plan / deploy / run / summary / destroy`, `auth login / profiles / describe`, `spark-pipelines dry-run / run`, `pytest`. |
 | Debugging | `.zed/debug.json` + `.zed/databricks/connect_runner.py` | Breakpoints in driver-side PySpark with Zed's Debugpy adapter, while Spark runs on the bundle target's cluster or on serverless through Databricks Connect. |
-| CI/CD templates | `project-template/ci/` | GitHub Actions and Azure DevOps pipelines: validate on PR, deploy to staging, gated prod. |
 
 ## Install
 
@@ -86,13 +85,17 @@ Press F4 and choose **Databricks Connect: debug current file**, or **debug pytes
 
 `connect_runner.py` creates the Databricks Connect session before running your file. It also provides `spark`, `dbutils` and `display`, so notebook-style scripts run unchanged, and `SparkSession.builder.getOrCreate()` returns the same session.
 
-It chooses compute and profile in this order:
-- **Compute:** `--cluster-id` / `--serverless`, then `DATABRICKS_CLUSTER_ID`, then the bundle target's `cluster_id`, then serverless.
-- **Profile:** `DATABRICKS_CONFIG_PROFILE`, then `.zed/settings.json` `terminal.env`.
+Compute and profile use Databricks Connect's own configuration: `DATABRICKS_CONFIG_PROFILE`, `DATABRICKS_CLUSTER_ID`, `DATABRICKS_SERVERLESS_COMPUTE_ID=auto`, or `cluster_id` / `serverless_compute_id` in the `~/.databrickscfg` profile. The runner only fills in what isn't configured:
+- **Profile and target:** from `.zed/settings.json` `terminal.env`, the same ones the tasks and diagnostics use.
+- **Compute:** the bundle target's `cluster_id`, otherwise serverless.
 
 Install `databricks-connect` in the project's Python environment. Its version must match your compute (for example, serverless or DBR 17 → 17.x).
 
 The same runner is available without the debugger as the task **databricks-connect: run current file**.
+
+### CI/CD
+
+Databricks documents bundle pipelines for [GitHub Actions](https://docs.databricks.com/aws/en/dev-tools/ci-cd/github) (with [workload identity federation](https://docs.databricks.com/aws/en/dev-tools/auth/provider-github), so no stored secrets) and [Azure DevOps](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/ci-cd/azure-devops).
 
 ### AI agents
 
