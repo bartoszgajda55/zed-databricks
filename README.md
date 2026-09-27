@@ -176,7 +176,7 @@ Open them with `task: spawn`.
 ### Python
 
 - **Stubs:** `typings/pyspark-stubs` is a *partial* stub package. It adds the Databricks API to `pyspark.pipelines` (expectations, `create_auto_cdc_flow` with SCD type 2 and history tracking, snapshot CDC, sinks, and extra dataset options) without shadowing the rest of PySpark.
-- **Runtime globals:** `__builtins__.pyi` defines `spark` and `sc`. It also defines `dbutils`, `display` and `displayHTML`, which are fully typed when `databricks-sdk` or `databricks-connect` is installed.
+- **Runtime globals:** `__builtins__.pyi` defines `spark` and `sc`. It also defines `dbutils`, `display` and `displayHTML`, which are fully typed when `databricks-sdk` or `databricks-connect` is installed. Projects created with `databricks bundle init` include the same file as `.vscode/__builtins__.pyi`, set up for VS Code; the template puts it at the project root, where basedpyright in Zed looks for it.
 - **Legacy `import dlt` code:** install Databricks' `databricks-dlt` package.
 
 ### Debugging with Databricks Connect
