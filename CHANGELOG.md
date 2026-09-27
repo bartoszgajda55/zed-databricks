@@ -8,6 +8,7 @@ All notable changes are listed here. One version covers the extension and `datab
 - Tasks for newer Databricks CLI commands: `environments setup-local` (a `.venv` matching the bundle target's cluster or serverless, including `databricks-connect`; CLI v1.9.0+), `bundle open`, and `pipelines dry-run` / `pipelines logs` on Databricks. The debugger setup now uses `environments setup-local` instead of a manual `databricks-connect` install.
 
 ### Changed
+- `setup-project.sh` merges the template's settings into an existing `.zed/settings.json` (existing values win; the original is kept as `settings.json.bak`) instead of asking for a manual merge.
 - The local pipeline tasks are labelled "on local Spark" to tell them apart from the dry-run on Databricks.
 - CI runs against Databricks CLI v1.18.0, and checks that every CLI command the tasks use exists.
 - The extension downloads the `databricks-bundle-ls` release matching its own version instead of the latest one, and checks for a cached copy before going online. With no network (or when GitHub's API rate limit is hit), it falls back to the newest cached copy.

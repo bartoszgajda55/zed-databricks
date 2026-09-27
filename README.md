@@ -45,7 +45,9 @@ Prerequisite: the [Databricks CLI](https://docs.databricks.com/dev-tools/cli/ins
    git clone https://github.com/bartoszgajda55/zed-databricks.git
    zed-databricks/scripts/setup-project.sh /path/to/your/project
    ```
-   The script never overwrites existing files. When a file already exists, it writes the template alongside it (for example `databricks.tasks.json`) for you to merge by hand.
+   The script never overwrites existing files:
+   - **`.zed/settings.json`:** if you already have one, the template's settings are merged in. Settings you already have win, and your original file is kept as `.zed/settings.json.bak`, because the merged file is written as plain JSON without comments. This needs `python3`; without it, or if your file can't be parsed, the template is written alongside instead.
+   - **Other files:** when one already exists, the template is written alongside it (for example `databricks.tasks.json`) for you to merge by hand.
 
 ## Usage
 

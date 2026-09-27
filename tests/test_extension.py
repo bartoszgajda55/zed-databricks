@@ -292,6 +292,43 @@ def test_setup_project_installs_templates_and_is_idempotent(tmp_path):
     assert "unchanged .zed/tasks.json" in second.stdout
 
 
+def test_setup_project_merges_existing_settings_and_keeps_a_backup(tmp_path):
+    original = """// my project settings
+{
+  "terminal": { "env": { "DATABRICKS_CONFIG_PROFILE": "turbines_dev", } },
+  "lsp": {
+    "databricks-bundle-ls": { "settings": { "validateOnOpen": false } },
+    "ruff": { "initialization_options": { "settings": { "configuration": { "builtins": ["spark"] } } } },
+  },
+}
+"""
+    (tmp_path / ".zed").mkdir()
+    (tmp_path / ".zed/settings.json").write_text(original)
+    out = run_setup(tmp_path).stdout
+    assert "merged    .zed/settings.json: added languages" in out
+    merged = json.loads((tmp_path / ".zed/settings.json").read_text())
+    assert merged["terminal"]["env"] == {"DATABRICKS_CONFIG_PROFILE": "turbines_dev"}
+    assert merged["lsp"]["databricks-bundle-ls"] == {"settings": {"validateOnOpen": False}}
+    # Values the project sets win over the template's.
+    assert merged["lsp"]["ruff"]["initialization_options"]["settings"]["configuration"]["builtins"] == ["spark"]
+    assert merged["languages"]["Python"]["formatter"] == {"language_server": {"name": "ruff"}}
+    assert (tmp_path / ".zed/settings.json.bak").read_text() == original
+    assert not (tmp_path / ".zed/databricks.settings.json").exists()
+
+    merged_text = (tmp_path / ".zed/settings.json").read_text()
+    assert "unchanged .zed/settings.json" in run_setup(tmp_path).stdout
+    assert (tmp_path / ".zed/settings.json").read_text() == merged_text
+
+
+def test_setup_project_falls_back_to_a_manual_merge_for_unparsable_settings(tmp_path):
+    (tmp_path / ".zed").mkdir()
+    (tmp_path / ".zed/settings.json").write_text("{ not json")
+    out = run_setup(tmp_path).stdout
+    assert "merge it in by hand" in out
+    assert (tmp_path / ".zed/settings.json").read_text() == "{ not json"
+    assert (tmp_path / ".zed/databricks.settings.json").exists()
+
+
 def test_setup_project_never_overwrites_existing_config(tmp_path):
     (tmp_path / ".zed").mkdir()
     (tmp_path / ".zed/tasks.json").write_text("[]\n")

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Wire a Databricks project for Zed: copies the .zed/ task + settings templates and the
-# Python type stubs for Databricks pipeline code (typings/pyspark-stubs, __builtins__.pyi).
+# Wire a Databricks project for Zed: copies the .zed/ tasks, debug scenarios and helpers and the
+# Python type stubs for Databricks pipeline code (typings/pyspark-stubs, __builtins__.pyi), and
+# merges the template's settings into .zed/settings.json.
 # The extension itself provides bundle schema validation and diagnostics.
 #
 # Usage: scripts/setup-project.sh [PROJECT_DIR]   (defaults to the current directory)
@@ -26,8 +27,19 @@ install_template() {
         echo "exists    .zed/$name -> wrote .zed/databricks.$name; merge it in by hand"
     fi
 }
+# Settings are merged instead: the template's keys are added to the project's file (values it
+# already sets win), keeping the original as settings.json.bak. Without python3, or if the
+# file can't be parsed, fall back to writing it alongside for a manual merge.
+install_settings() {
+    if [ -e "$ZED_DIR/settings.json" ] && command -v python3 >/dev/null 2>&1 &&
+        python3 "$(dirname "$0")/merge_settings.py" "$TEMPLATE_DIR/settings.json" "$ZED_DIR/settings.json"; then
+        return
+    fi
+    install_template settings.json
+}
+
 install_template tasks.json
-install_template settings.json
+install_settings
 install_template debug.json
 
 # Helpers the tasks and debug scenarios run: the Databricks Connect runner and the CLI wrapper.
