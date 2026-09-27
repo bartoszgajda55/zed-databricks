@@ -4,6 +4,9 @@ All notable changes are listed here. One version covers the extension and `datab
 
 ## [Unreleased]
 
+### Changed
+- `databricks-bundle-ls` uses `lsp-types` 0.97 (file URIs are still built and parsed with the `url` crate, so Windows paths behave as before).
+
 ## [0.2.3] - 2026-09-27
 
 ### Changed
