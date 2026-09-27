@@ -130,6 +130,17 @@ def test_configure_defaults_to_serverless(project, monkeypatch):
     assert env["DATABRICKS_SERVERLESS_COMPUTE_ID"] == "auto"
 
 
+def test_missing_databricks_connect_explains_the_fix(tmp_path):
+    (tmp_path / "databricks.yml").write_text("bundle: {name: x}\n")
+    no_venv = runner.missing_connect_message("/usr/bin/python3", tmp_path)
+    assert "not installed for /usr/bin/python3" in no_venv and "environments setup-local" in no_venv
+    venv_python = tmp_path / ".venv/bin/python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("")
+    other = runner.missing_connect_message("/opt/uv/python3.13", tmp_path / "src")
+    assert str(venv_python) in other and "toolchain: select toolchain" in other
+
+
 def test_bundle_cluster_id_reads_the_resolved_target(tmp_path, monkeypatch):
     fake = tmp_path / "databricks"
     fake.write_text(

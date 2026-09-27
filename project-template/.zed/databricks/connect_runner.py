@@ -191,12 +191,33 @@ def install_globals(session, profile: str | None) -> None:
         print(f"connect_runner: dbutils unavailable ({err})", file=sys.stderr)
 
 
+def missing_connect_message(python: str, start: Path) -> str:
+    """Why `databricks.connect` can't be imported, and how to fix it."""
+    lines = [f"connect_runner: databricks-connect is not installed for {python}."]
+    root = find_bundle_root(start) or start
+    venv_python = root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if venv_python.exists() and Path(python).resolve() != venv_python.resolve():
+        lines.append(
+            f"The project has {venv_python}, but a different Python ran this. In Zed, select it with"
+            " `toolchain: select toolchain` (restart Zed if it isn't listed), then debug again."
+        )
+    else:
+        lines.append(
+            "Create the project's environment with the task `databricks: environments setup-local`"
+            " (CLI v1.9.0+), then select `.venv` with `toolchain: select toolchain`."
+        )
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> None:
     invocation = parse_args(sys.argv[1:] if argv is None else argv)
     start = Path(invocation.file).resolve().parent if invocation.file else Path.cwd()
     print(f"Databricks Connect: {configure(start, os.environ)}", file=sys.stderr)
 
-    from databricks.connect import DatabricksSession
+    try:
+        from databricks.connect import DatabricksSession
+    except ImportError:
+        raise SystemExit(missing_connect_message(sys.executable, start)) from None
 
     install_globals(DatabricksSession.builder.getOrCreate(), os.environ.get(PROFILE_ENV))
 

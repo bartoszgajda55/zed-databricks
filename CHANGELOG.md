@@ -16,6 +16,7 @@ All notable changes are listed here. One version covers the extension and `datab
 - Release archives carry build provenance attestations (`gh attestation verify`).
 
 ### Fixed
+- The debug runner failed with a bare `ModuleNotFoundError` when Zed ran it with a Python lacking `databricks-connect`; it now names that Python and says how to fix it (select the project's `.venv`, or run `environments setup-local`).
 - Task banners always printed `<bundle default>` / `<DEFAULT>`, and `DATABRICKS_SERVERLESS_VERSION` never overrode the serverless version: Zed resolves `${VAR:-default}` to the default before the shell sees the project's environment. The tasks use `$(printenv VAR || echo default)` instead.
 - A `bundle validate` failure without an error the server could parse (for example a crash) showed a clean bundle; it is now reported on `databricks.yml` with the end of the CLI's output.
 - A symbolic link loop inside a bundle could hang validation.
