@@ -21,5 +21,5 @@ databricks-dev-mcp = "databricks_dev_mcp.server:main"
 Repository = "https://github.com/bartoszgajda55/zed-databricks"
 
 [build-system]
-requires = ["uv_build>=0.11.28,<0.12.0"]
+requires = ["uv_build>=0.12.18,<0.13.0"]
 build-backend = "uv_build"

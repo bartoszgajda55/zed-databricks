@@ -12,7 +12,7 @@ dev = [
     "jsonschema>=4.23",
     "pyyaml>=6",
     "regex>=2024.11",
-    "pyspark[connect]>=4.1",
+    "pyspark[connect]>=4.2.0",
     "chispa>=0.10",
     "databricks-dev-mcp",
     "pytest-asyncio>=1.4",

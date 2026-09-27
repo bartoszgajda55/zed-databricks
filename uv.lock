@@ -1580,7 +1580,7 @@ dev = [
     { name = "databricks-sdk", specifier = ">=0.141.0" },
     { name = "debugpy", specifier = ">=1.8.22" },
     { name = "jsonschema", specifier = ">=4.23" },
-    { name = "pyspark", extras = ["connect"], specifier = ">=4.1" },
+    { name = "pyspark", extras = ["connect"], specifier = ">=4.2.0" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=1.4" },
     { name = "pyyaml", specifier = ">=6" },
