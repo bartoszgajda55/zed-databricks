@@ -17,7 +17,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - uses: databricks/setup-cli@v1.17.0
+      - uses: databricks/setup-cli@v1.18.0
       - run: uv sync
       - name: Lint and type-check
         run: |
@@ -40,7 +40,7 @@ jobs:
           workspaces: |
             .
             servers/databricks-bundle-ls
-      - uses: databricks/setup-cli@v1.17.0
+      - uses: databricks/setup-cli@v1.18.0
       - name: Extension (wasm)
         run: |
           cargo fmt --check
