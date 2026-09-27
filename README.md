@@ -169,6 +169,8 @@ Type a prefix and accept it from the completion list; Tab moves between placehol
 
 ### Tasks
 
+![The task picker filtered to the databricks tasks](docs/images/tasks.png)
+
 Open them with `task: spawn`. Tasks that work on the bundle run through `.zed/databricks/cli.sh`, which prints the active target and profile first, then runs the `databricks` command.
 - **`bundle run (pick resource)`** / **`bundle open (pick resource)`**: the CLI prompts you for a resource to run, or to open in the browser.
 - **`bundle run "…"`**: runs the resource key currently selected in the editor.
