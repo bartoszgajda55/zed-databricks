@@ -9,7 +9,9 @@
 #
 # Updating the Zed extension registry is opt-in through a repository variable:
 #   PUBLISH_ZED_EXTENSION=true  PR to zed-industries/extensions from a fork (vars.ZED_EXTENSIONS_FORK),
-#                               token secrets.ZED_EXTENSIONS_TOKEN (classic; scopes: repo, workflow).
+#                               token secrets.ZED_EXTENSIONS_TOKEN: a classic token (the action pushes
+#                               to the fork and opens a cross-repository PR, which fine-grained tokens
+#                               can't) with only the `public_repo` and `workflow` scopes.
 #                               The action only updates a listed extension: the first submission
 #                               must be a manual PR.
 name: Release
@@ -32,7 +34,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tag matches every manifest
         run: python3 scripts/release.py check --tag "$GITHUB_REF"
       - id: version
@@ -57,9 +59,10 @@ jobs:
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
       - name: Build
         working-directory: servers/databricks-bundle-ls
@@ -69,17 +72,20 @@ jobs:
         run: |
           bin=databricks-bundle-ls
           [[ "${{ matrix.target }}" == *windows* ]] && bin=$bin.exe
-          # Asset names must match `bundle_schema::release_target` in src/; the binary sits at the
+          # Asset names must match `platform::release_target` in src/; the binary sits at the
           # archive root because the extension unpacks it into a versioned directory.
           tar -czf databricks-bundle-ls-${{ matrix.target }}.tar.gz \
             -C servers/databricks-bundle-ls/target/${{ matrix.target }}/release $bin
+      # Every build runs on a native runner except the Intel Mac one (cross-compiled on Apple Silicon).
       - name: Smoke test
-        if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'aarch64-apple-darwin'
+        if: matrix.target != 'x86_64-apple-darwin'
         shell: bash
         run: |
           mkdir smoke && tar -xzf databricks-bundle-ls-${{ matrix.target }}.tar.gz -C smoke
-          smoke/databricks-bundle-ls --version | grep -q "databricks-bundle-ls ${{ needs.verify.outputs.version }}"
-      - uses: actions/upload-artifact@v7
+          bin=smoke/databricks-bundle-ls
+          [[ "${{ matrix.target }}" == *windows* ]] && bin=$bin.exe
+          "$bin" --version | grep -q "databricks-bundle-ls ${{ needs.verify.outputs.version }}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bundle-ls-${{ matrix.target }}
           path: databricks-bundle-ls-${{ matrix.target }}.tar.gz
@@ -89,18 +95,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write # build provenance attestation
+      attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Release notes from CHANGELOG.md
         run: python3 scripts/release.py notes "${{ needs.verify.outputs.version }}" > release-notes.md
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: assets
           merge-multiple: true
       - name: Checksums
         working-directory: assets
         run: sha256sum * > SHA256SUMS && cat SHA256SUMS
-      - uses: softprops/action-gh-release@v3
+      # Verifiable with `gh attestation verify <archive> -R bartoszgajda55/zed-databricks`.
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: assets/*.tar.gz
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: assets/*
           prerelease: ${{ needs.verify.outputs.prerelease == 'true' }}
@@ -110,8 +122,10 @@ jobs:
     needs: [verify, github-release]
     if: needs.verify.outputs.prerelease == 'false' && vars.PUBLISH_ZED_EXTENSION == 'true'
     runs-on: ubuntu-latest
+    # The action works in the fork with its own token; it needs nothing from GITHUB_TOKEN.
+    permissions: {}
     steps:
-      - uses: huacnlee/zed-extension-action@v2
+      - uses: huacnlee/zed-extension-action@82920ff0876879f65ffbcfa3403589114a8919c6 # v2
         with:
           extension-name: databricks
           push-to: ${{ vars.ZED_EXTENSIONS_FORK }}

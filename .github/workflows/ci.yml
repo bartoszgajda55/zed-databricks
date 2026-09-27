@@ -7,17 +7,21 @@ on:
   # Reused by release.yml to test the tagged commit.
   workflow_call:
 
+# Actions are pinned to commit SHAs (Dependabot keeps them current); jobs only read the repo.
+permissions:
+  contents: read
+
 jobs:
   python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
-      - uses: actions/setup-java@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
-      - uses: databricks/setup-cli@v1.17.0
+      - uses: databricks/setup-cli@d76f84cea9893ce68311a1f33fb0c95af6c963b7 # v1.17.0
       - run: uv sync
       - name: Lint and type-check
         run: |
@@ -27,29 +31,44 @@ jobs:
       # Snippets, templates, stubs, local Spark integration, the debugger runner and releases.
       - run: uv run pytest
 
+  # The extension (wasm): lint, build and unit tests.
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
+          toolchain: stable
           targets: wasm32-wasip2
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            servers/databricks-bundle-ls
-      - uses: databricks/setup-cli@v1.17.0
-      - name: Extension (wasm)
-        run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo build --release --target wasm32-wasip2
-          cargo test
-      - name: databricks-bundle-ls
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo build --release --target wasm32-wasip2
+      - run: cargo test
+
+  # databricks-bundle-ls on every platform it's released for (the Intel Mac build is
+  # cross-compiled from the same code as the Apple Silicon one).
+  bundle-ls:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
         working-directory: servers/databricks-bundle-ls
-        run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: servers/databricks-bundle-ls
+      # The end-to-end tests also run against the real CLI.
+      - uses: databricks/setup-cli@d76f84cea9893ce68311a1f33fb0c95af6c963b7 # v1.17.0
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
