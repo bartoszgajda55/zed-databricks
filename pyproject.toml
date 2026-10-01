@@ -16,7 +16,7 @@ dev = [
     "chispa>=0.10",
     "basedpyright>=1.40.1",
     "ruff>=0.16.9",
-    "databricks-sdk>=0.141.0",
+    "databricks-sdk>=0.143.0",
     "debugpy>=1.8.22",
 ]
 
